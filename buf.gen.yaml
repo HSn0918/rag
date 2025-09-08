@@ -1,0 +1,14 @@
+# buf.gen.yaml
+# This file defines the code generation configuration.
+version: v1
+plugins:
+  # This plugin generates the Go Protobuf code (e.g., message structs).
+  - plugin: buf.build/protocolbuffers/go:v1.34.1
+    out: internal/gen
+    opt:
+      - paths=source_relative
+  # This plugin generates the Go ConnectRPC code (server handlers and client stubs).
+  - plugin: buf.build/connectrpc/go:v1.16.2
+    out: internal/gen
+    opt:
+      - paths=source_relative

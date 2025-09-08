@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package rag.v1;
+
+option go_package = "github.com/hsn0918/rag/internal/gen/proto/rag/v1;ragv1";
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/empty.proto";
+service RagService {
+  rpc PreUpload(PreUploadRequest) returns (PreUploadResponse);
+  rpc UploadPdf(UploadPdfRequest) returns (UploadPdfResponse);
+  rpc GetContext(GetContextRequest) returns (GetContextResponse);
+}
+
+message PreUploadRequest {
+  string filename = 1;
+}
+
+message PreUploadResponse {
+  string upload_url = 1;
+  string file_key = 2;
+  int64 expires_in = 3;
+}
+
+message UploadPdfRequest {
+  string file_key = 1;
+  string filename = 2;
+}
+
+message UploadPdfResponse {
+  bool success = 1;
+  string message = 2;
+  string document_id = 3;
+}
+
+message GetContextRequest {
+  string query = 1;
+}
+
+message GetContextResponse {
+  string context = 1;
+}
+
