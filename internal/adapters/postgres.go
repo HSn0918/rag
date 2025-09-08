@@ -48,16 +48,7 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	}
 	log.Println("pgvector 扩展已启用。")
 
-	// 4. 创建用于存储文档和向量的表（如果不存在）
-	// 使用 fmt.Sprintf 动态设置向量维度
-	createTableQuery := fmt.Sprintf(`
-	CREATE TABLE IF NOT EXISTS documents (
-		id SERIAL PRIMARY KEY,
-		content TEXT,
-		embedding vector(%d)
-	);`, dimensions)
-
-	// 创建文档表和文档块表
+	// 4. 创建文档表和文档块表
 	createDocumentsTable := `
 	CREATE TABLE IF NOT EXISTS rag_documents (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -80,13 +71,7 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 		UNIQUE(document_id, chunk_index)
 	);`, dimensions)
 
-	_, err = conn.Exec(ctx, createTableQuery)
-	if err != nil {
-		return nil, fmt.Errorf("无法创建 documents 表: %w", err)
-	}
-	log.Printf("documents 表已准备就绪 (向量维度: %d)。\n", dimensions)
-
-	// 执行新的表创建
+	// 创建表
 	_, err = conn.Exec(ctx, createDocumentsTable)
 	if err != nil {
 		return nil, fmt.Errorf("无法创建 rag_documents 表: %w", err)
@@ -101,33 +86,14 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	return &PostgresVectorDB{conn: conn}, nil
 }
 
-// Store 将内容和其对应的向量嵌入存储到数据库中。
+// Store 将内容和其对应的向量嵌入存储到数据库中。(已废弃 - 使用 StoreChunk 代替)
 func (db *PostgresVectorDB) Store(content string, embedding []float32) error {
-	_, err := db.conn.Exec(context.Background(), "INSERT INTO documents (content, embedding) VALUES ($1, $2)", content, pgvector.NewVector(embedding))
-	if err != nil {
-		return fmt.Errorf("存储向量失败: %w", err)
-	}
-	return nil
+	return fmt.Errorf("Store method is deprecated, use StoreChunk instead")
 }
 
-// Search 在数据库中搜索与给定向量最相似的 k 个结果。
+// Search 在数据库中搜索与给定向量最相似的 k 个结果。(已废弃 - 需要重新实现)
 func (db *PostgresVectorDB) Search(embedding []float32, k int) ([]string, error) {
-	rows, err := db.conn.Query(context.Background(), "SELECT content FROM documents ORDER BY embedding <-> $1 LIMIT $2", pgvector.NewVector(embedding), k)
-	if err != nil {
-		return nil, fmt.Errorf("向量搜索失败: %w", err)
-	}
-	defer rows.Close()
-
-	var results []string
-	for rows.Next() {
-		var content string
-		if err := rows.Scan(&content); err != nil {
-			return nil, fmt.Errorf("扫描搜索结果失败: %w", err)
-		}
-		results = append(results, content)
-	}
-
-	return results, nil
+	return nil, fmt.Errorf("Search method needs to be reimplemented for new schema")
 }
 
 // StoreDocument 存储文档并返回文档ID

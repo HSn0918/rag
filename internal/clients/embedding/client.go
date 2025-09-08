@@ -130,3 +130,22 @@ func GetSupportedDimensions(model string) []int {
 		return nil
 	}
 }
+
+func GetDefaultDimensions(model string) int {
+	switch model {
+	case ModelQwen3Embedding8B:
+		return 4096 // 默认最大维度
+	case ModelQwen3Embedding4B:
+		return 2048 // 默认最大维度
+	case ModelQwen3Embedding06B:
+		return 1024 // 默认最大维度
+	case ModelBGELargeZhV15, ModelBGELargeEnV15:
+		return 1024 // BGE-Large 系列
+	case ModelBCEEmbeddingBaseV1:
+		return 768 // BCE 系列
+	case ModelBGEM3, ModelProBGEM3:
+		return 1024 // BGE-M3 系列
+	default:
+		return 1536 // 默认回退维度
+	}
+}

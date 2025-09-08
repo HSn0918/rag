@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/adapters"
@@ -255,6 +256,9 @@ func (s *RagServer) UploadPdf(
 	chunks := s.chunkText(textContent, 512, 50) // 512 字符块，50 字符重叠
 
 	for i, chunk := range chunks {
+		// 清理无效的UTF-8字符
+		chunk = s.cleanUTF8(chunk)
+
 		// 生成嵌入向量
 		embeddingVec, err := s.generateEmbedding(ctx, chunk)
 		if err != nil {
@@ -372,6 +376,26 @@ func (s *RagServer) generateObjectKey(filename string) (string, error) {
 	objectKey := fmt.Sprintf("%d_%s_%s", timestamp, randomStr, filename)
 
 	return objectKey, nil
+}
+
+// cleanUTF8 清理字符串中的无效UTF-8字节序列
+func (s *RagServer) cleanUTF8(text string) string {
+	if utf8.ValidString(text) {
+		return text
+	}
+
+	// 使用utf8.Valid逐字节检查并替换无效字符
+	var result strings.Builder
+	for _, r := range text {
+		if r == utf8.RuneError {
+			// 跳过无效字符或替换为空格
+			result.WriteRune(' ')
+		} else {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
 }
 
 // GetContext 接口的实现。

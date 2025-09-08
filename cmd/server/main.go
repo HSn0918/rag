@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/hsn0918/rag/internal/adapters"
+	"github.com/hsn0918/rag/internal/clients/embedding"
 	"github.com/hsn0918/rag/internal/config"
 	"github.com/hsn0918/rag/internal/gen/proto/rag/v1/ragv1connect"
 	"github.com/hsn0918/rag/internal/redis"
@@ -33,8 +34,12 @@ func main() {
 		cfg.Database.DBName,
 	)
 
-	// 3. 初始化数据库适配器，传入连接字符串和嵌入维度
-	db, err := adapters.NewPostgresVectorDB(dsn, 4096) // Qwen3-Embedding-8B 使用 4096 维度
+	// 3. 动态获取embedding模型的维度并初始化数据库适配器
+	embeddingModel := cfg.Services.Embedding.Model
+	dimensions := embedding.GetDefaultDimensions(embeddingModel)
+	log.Printf("使用embedding模型: %s, 向量维度: %d", embeddingModel, dimensions)
+
+	db, err := adapters.NewPostgresVectorDB(dsn, dimensions)
 	if err != nil {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
