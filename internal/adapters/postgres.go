@@ -9,7 +9,17 @@ import (
 	"github.com/hsn0918/rag/internal/logger"
 	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
+	"go.uber.org/zap"
 )
+
+// ChunkSearchResult 表示分块搜索结果
+type ChunkSearchResult struct {
+	ChunkID    string                 `json:"chunk_id"`
+	DocumentID string                 `json:"document_id"`
+	Content    string                 `json:"content"`
+	Similarity float32                `json:"similarity"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+}
 
 // VectorDB 定义了向量数据库操作的接口。
 type VectorDB interface {
@@ -17,6 +27,7 @@ type VectorDB interface {
 	Search(embedding []float32, k int) ([]string, error)
 	StoreDocument(ctx context.Context, title, content string, metadata map[string]interface{}) (string, error)
 	StoreChunk(ctx context.Context, docID string, chunkIndex int, content string, embedding []float32, metadata map[string]interface{}) error
+	SearchSimilarChunks(ctx context.Context, queryVector []float32, limit int, threshold float32) ([]ChunkSearchResult, error)
 }
 
 // PostgresVectorDB 实现了 VectorDB 接口，使用 PostgreSQL 和 pgvector。
@@ -130,4 +141,65 @@ func (db *PostgresVectorDB) StoreChunk(ctx context.Context, docID string, chunkI
 	}
 
 	return nil
+}
+
+// SearchSimilarChunks 基于向量相似性搜索相关文档块
+func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector []float32, limit int, threshold float32) ([]ChunkSearchResult, error) {
+	// 使用余弦相似度搜索相似的文档块
+	query := `
+		SELECT 
+			c.id as chunk_id,
+			c.document_id,
+			c.content,
+			1 - (c.embedding <=> $1) as similarity,
+			c.metadata
+		FROM document_chunks c
+		WHERE 1 - (c.embedding <=> $1) > $2
+		ORDER BY c.embedding <=> $1
+		LIMIT $3
+	`
+
+	rows, err := db.conn.Query(ctx, query, pgvector.NewVector(queryVector), threshold, limit)
+	if err != nil {
+		return nil, fmt.Errorf("查询相似文档块失败: %w", err)
+	}
+	defer rows.Close()
+
+	var results []ChunkSearchResult
+	for rows.Next() {
+		var result ChunkSearchResult
+		var metadataJSON []byte
+
+		err := rows.Scan(
+			&result.ChunkID,
+			&result.DocumentID,
+			&result.Content,
+			&result.Similarity,
+			&metadataJSON,
+		)
+		if err != nil {
+			logger.GetLogger().Error("扫描搜索结果失败", zap.Error(err))
+			continue
+		}
+
+		// 解析metadata
+		if len(metadataJSON) > 0 {
+			err = json.Unmarshal(metadataJSON, &result.Metadata)
+			if err != nil {
+				logger.GetLogger().Error("解析metadata失败", zap.Error(err))
+				result.Metadata = make(map[string]interface{})
+			}
+		} else {
+			result.Metadata = make(map[string]interface{})
+		}
+
+		results = append(results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历搜索结果失败: %w", err)
+	}
+
+	logger.GetLogger().Info(fmt.Sprintf("向量搜索完成，找到 %d 个相似块", len(results)))
+	return results, nil
 }

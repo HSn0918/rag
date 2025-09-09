@@ -1,5 +1,0 @@
-# buf.work.yaml
-# This file defines a workspace, which is a collection of modules.
-version: v1
-directories:
-  - api

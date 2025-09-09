@@ -1,0 +1,22 @@
+version: v2
+
+modules:
+  - path: api
+
+lint:
+  use:
+    - DEFAULT
+    - COMMENTS
+    - FILE_LOWER_SNAKE_CASE
+  except:
+    - ENUM_VALUE_PREFIX
+    - SERVICE_SUFFIX
+
+breaking:
+  use:
+    - FILE
+
+deps:
+  - buf.build/bufbuild/protovalidate:v0.13.3
+  - buf.build/googleapis/googleapis
+  - buf.build/protocolbuffers/wellknowntypes

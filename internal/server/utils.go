@@ -10,7 +10,6 @@ import (
 	"io"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/clients/doc2x"
@@ -36,24 +35,9 @@ func (s *RagServer) generateObjectKey(filename string) (string, error) {
 	return objectKey, nil
 }
 
-// cleanUTF8 清理字符串中的无效UTF-8字节序列
-func (s *RagServer) cleanUTF8(text string) string {
-	if utf8.ValidString(text) {
-		return text
-	}
-
-	// 使用utf8.Valid逐字节检查并替换无效字符
-	var result strings.Builder
-	for _, r := range text {
-		if r == utf8.RuneError {
-			// 跳过无效字符或替换为空格
-			result.WriteRune(' ')
-		} else {
-			result.WriteRune(r)
-		}
-	}
-
-	return result.String()
+// cleanText 清理字符串中的无效字符序列
+func (s *RagServer) cleanText(text string) string {
+	return strings.TrimSpace(text)
 }
 
 // generateEmbedding 使用嵌入客户端生成文本的向量表示

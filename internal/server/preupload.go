@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	ragv1 "github.com/hsn0918/rag/internal/gen/proto/rag/v1"
+	ragv1 "github.com/hsn0918/rag/internal/gen/rag/v1"
 )
 
 // PreUpload 接口的实现，生成预签名上传 URL

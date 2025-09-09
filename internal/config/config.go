@@ -12,6 +12,16 @@ type ServiceConfig struct {
 	Model   string `mapstructure:"model"`
 }
 
+type ChunkingConfig struct {
+	MaxChunkSize      int     `mapstructure:"max_chunk_size"`
+	OverlapSize       int     `mapstructure:"overlap_size"`
+	MinChunkSize      int     `mapstructure:"min_chunk_size"`
+	SentenceBoundary  bool    `mapstructure:"sentence_boundary"`
+	ParagraphBoundary bool    `mapstructure:"paragraph_boundary"`
+	AdaptiveSize      bool    `mapstructure:"adaptive_size"`
+	SizeMultiplier    float64 `mapstructure:"size_multiplier"`
+}
+
 type Config struct {
 	Server struct {
 		Host string `mapstructure:"host"`
@@ -37,6 +47,7 @@ type Config struct {
 		BucketName      string `mapstructure:"bucket_name"`
 		UseSSL          bool   `mapstructure:"use_ssl"`
 	} `mapstructure:"minio"`
+	Chunking ChunkingConfig `mapstructure:"chunking"`
 	Services struct {
 		Doc2X     ServiceConfig `mapstructure:"doc2x"`
 		Embedding struct {
@@ -48,6 +59,15 @@ type Config struct {
 }
 
 func LoadConfig(path string) (config Config, err error) {
+	// Set default values for chunking
+	viper.SetDefault("chunking.max_chunk_size", 512)
+	viper.SetDefault("chunking.overlap_size", 50)
+	viper.SetDefault("chunking.min_chunk_size", 100)
+	viper.SetDefault("chunking.sentence_boundary", true)
+	viper.SetDefault("chunking.paragraph_boundary", true)
+	viper.SetDefault("chunking.adaptive_size", true)
+	viper.SetDefault("chunking.size_multiplier", 1.5)
+
 	viper.AddConfigPath(path)
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")

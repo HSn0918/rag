@@ -1,0 +1,77 @@
+
+syntax = "proto3";
+
+package rag.v1;
+
+option go_package = "github.com/hsn0918/rag/internal/gen/rag/v1;ragv1";
+
+import "buf/validate/validate.proto";
+
+// RAG服务提供文档上传和上下文检索功能
+service RagService {
+  // 预上传接口，生成文件上传的预签名URL
+  rpc PreUpload(PreUploadRequest) returns (PreUploadResponse);
+  // 上传PDF文件并进行处理
+  rpc UploadPdf(UploadPdfRequest) returns (UploadPdfResponse);
+  // 根据查询获取相关上下文
+  rpc GetContext(GetContextRequest) returns (GetContextResponse);
+}
+
+// 预上传请求
+message PreUploadRequest {
+  // 文件名，必须是PDF格式
+  string filename = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[^/\\\\:*?\"<>|]+\\.(pdf|PDF)$"
+  }];
+}
+
+// 预上传响应
+message PreUploadResponse {
+  // 预签名上传URL
+  string upload_url = 1;
+  // 文件唯一标识键
+  string file_key = 2;
+  // URL过期时间（秒）
+  int64 expires_in = 3;
+}
+
+// 上传PDF请求
+message UploadPdfRequest {
+  // 文件键不能为空
+  string file_key = 1 [(buf.validate.field).string.min_len = 1];
+
+  // 文件名不能为空且必须是PDF文件
+  string filename = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[^/\\\\:*?\"<>|]+\\.(pdf|PDF)$"
+  }];
+}
+
+// 上传PDF响应
+message UploadPdfResponse {
+  // 处理是否成功
+  bool success = 1;
+  // 处理结果消息
+  string message = 2;
+  // 文档唯一标识ID
+  string document_id = 3;
+}
+
+// 获取上下文请求
+message GetContextRequest {
+  // 查询字符串不能为空且长度限制
+  string query = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2000
+  }];
+}
+
+// 获取上下文响应
+message GetContextResponse {
+  // 检索到的相关上下文内容
+  string context = 1;
+}
+
