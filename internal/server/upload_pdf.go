@@ -155,11 +155,15 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 	if s.detectMarkdownContent(content) {
 		// Markdown内容，使用AST-based chunking
 		logger.GetLogger().Debug("Detected Markdown content, using AST-based chunking")
-		chunker := chunking.NewMarkdownChunker(
+		chunker, err := chunking.NewMarkdownChunker(
 			chunkConfig.MaxChunkSize,
 			chunkConfig.OverlapSize,
 			true,
 		)
+		if err != nil {
+			logger.GetLogger().Warn("Failed to create markdown chunker, falling back to intelligent text chunking", zap.Error(err))
+			return s.intelligentTextChunking(content), nil
+		}
 		chunks, err := chunker.ChunkMarkdown(content)
 		if err != nil {
 			// AST分块失败时，回退到智能文本分块
