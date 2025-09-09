@@ -32,7 +32,7 @@ func (s *RagServer) GetContext(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query is required"))
 	}
 
-	logger.GetLogger().Info("开始处理智能文档检索请求",
+	logger.Get().Info("开始处理智能文档检索请求",
 		zap.String("query", query),
 		zap.Int("query_length", len(query)),
 	)
@@ -40,10 +40,10 @@ func (s *RagServer) GetContext(
 	// 第一步：使用大模型进行智能分词和关键词提取
 	keywords, err := s.generateKeywords(ctx, query)
 	if err != nil {
-		logger.GetLogger().Error("大模型关键词提取失败", zap.Error(err))
+		logger.Get().Error("大模型关键词提取失败", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate keywords: %w", err))
 	}
-	logger.GetLogger().Debug("大模型关键词提取完成",
+	logger.Get().Debug("大模型关键词提取完成",
 		zap.Strings("keywords", keywords),
 	)
 
@@ -55,19 +55,19 @@ func (s *RagServer) GetContext(
 	}
 	queryVector, err := s.generateEmbedding(ctx, queryText)
 	if err != nil {
-		logger.GetLogger().Error("查询向量生成失败", zap.Error(err))
+		logger.Get().Error("查询向量生成失败", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate query embedding: %w", err))
 	}
 
 	// 第三步：执行向量相似性搜索，获取候选文档块
 	similarChunks, err := s.searchSimilarChunks(ctx, queryVector, 15) // 获取更多候选用于重排
 	if err != nil {
-		logger.GetLogger().Error("向量相似性搜索失败", zap.Error(err))
+		logger.Get().Error("向量相似性搜索失败", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
 	}
 
 	if len(similarChunks) == 0 {
-		logger.GetLogger().Warn("未找到相关文档", zap.String("query", query))
+		logger.Get().Warn("未找到相关文档", zap.String("query", query))
 		return connect.NewResponse(&ragv1.GetContextResponse{
 			Context: fmt.Sprintf("未找到与查询 '%s' 相关的内容。请尝试使用不同的关键词。", query),
 		}), nil
@@ -79,12 +79,12 @@ func (s *RagServer) GetContext(
 	// 第五步：使用大模型生成个性化总结回答
 	contextContent, err := s.generateContextSummary(ctx, rankedChunks, query)
 	if err != nil {
-		logger.GetLogger().Error("大模型总结生成失败", zap.Error(err))
+		logger.Get().Error("大模型总结生成失败", zap.Error(err))
 		// 降级到模板回答
 		contextContent = s.buildContextResponse(rankedChunks, query)
 	}
 
-	logger.GetLogger().Info("智能文档检索完成",
+	logger.Get().Info("智能文档检索完成",
 		zap.String("query", query),
 		zap.Int("chunks_found", len(similarChunks)),
 		zap.Int("chunks_used", len(rankedChunks)),
@@ -107,7 +107,7 @@ func (s *RagServer) searchSimilarChunks(ctx context.Context, queryVector []float
 		return nil, fmt.Errorf("database search failed: %w", err)
 	}
 
-	logger.GetLogger().Debug("Vector search completed",
+	logger.Get().Debug("Vector search completed",
 		zap.Int("results_count", len(results)),
 		zap.Int("query_vector_dim", len(queryVector)),
 	)
@@ -140,7 +140,7 @@ func (s *RagServer) rerankChunks(chunks []adapters.ChunkSearchResult, query stri
 		}
 	}
 
-	logger.GetLogger().Debug("Chunks reranked and filtered",
+	logger.Get().Debug("Chunks reranked and filtered",
 		zap.Int("original_count", len(chunks)),
 		zap.Int("filtered_count", len(filteredChunks)),
 	)
@@ -284,7 +284,7 @@ func (s *RagServer) generateKeywords(ctx context.Context, query string) ([]strin
 
 	resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 	if err != nil {
-		logger.GetLogger().Error("LLM关键词提取失败", zap.Error(err))
+		logger.Get().Error("LLM关键词提取失败", zap.Error(err))
 		// 降级为简单分词
 		return s.fallbackKeywords(query), nil
 	}
@@ -388,7 +388,7 @@ func (s *RagServer) rerankChunksWithKeywords(chunks []adapters.ChunkSearchResult
 		}
 	}
 
-	logger.GetLogger().Debug("Advanced reranking completed",
+	logger.Get().Debug("Advanced reranking completed",
 		zap.Int("original_count", len(chunks)),
 		zap.Int("filtered_count", len(filteredChunks)),
 		zap.Strings("keywords", keywords),
@@ -498,13 +498,13 @@ func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapter
 	// 调用LLM进行智能总结
 	resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 	if err != nil {
-		logger.GetLogger().Error("LLM智能总结失败，回退到基础模板", zap.Error(err))
+		logger.Get().Error("LLM智能总结失败，回退到基础模板", zap.Error(err))
 		// 降级到基础模板方案
 		return s.generateBasicContextSummary(chunks, query), nil
 	}
 
 	if len(resp.Choices) == 0 || resp.Choices[0].Message.Content == "" {
-		logger.GetLogger().Warn("LLM返回空内容，回退到基础模板")
+		logger.Get().Warn("LLM返回空内容，回退到基础模板")
 		return s.generateBasicContextSummary(chunks, query), nil
 	}
 
@@ -516,7 +516,7 @@ func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapter
 	finalSummary.WriteString("\n\n---\n\n")
 	finalSummary.WriteString("💡 **提示**: 以上回答基于知识库检索结果生成，如需了解更详细信息，可以尝试调整查询关键词或提出更具体的问题。")
 
-	logger.GetLogger().Info("LLM智能总结生成成功",
+	logger.Get().Info("LLM智能总结生成成功",
 		zap.String("query", query),
 		zap.Int("chunks_count", len(chunks)),
 		zap.Int("summary_length", len(intelligentSummary)),

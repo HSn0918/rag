@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/minio/minio-go/v7 v7.0.95
+	github.com/modelcontextprotocol/go-sdk v0.4.0
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/redis/rueidis v1.0.64
 	github.com/spf13/viper v1.20.1
@@ -25,6 +26,7 @@ require (
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/cel-go v0.25.0 // indirect
+	github.com/google/jsonschema-go v0.2.1-0.20250825175020-748c325cec76 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/minio/crc64nvme v1.0.2 // indirect
@@ -34,6 +36,7 @@ require (
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect

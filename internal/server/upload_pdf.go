@@ -51,7 +51,7 @@ func (s *RagServer) UploadPdf(
 	defer func() {
 		err := object.Close()
 		if err != nil {
-			logger.GetLogger().Error("failed to close file", zap.Error(err))
+			logger.Get().Error("failed to close file", zap.Error(err))
 		}
 	}()
 
@@ -107,7 +107,7 @@ func (s *RagServer) UploadPdf(
 
 		embeddingVec, err := s.generateEmbedding(ctx, cleanContent)
 		if err != nil {
-			logger.GetLogger().Error("Failed to generate embedding for chunk", zap.Int("chunk_id", i), zap.Error(err))
+			logger.Get().Error("Failed to generate embedding for chunk", zap.Int("chunk_id", i), zap.Error(err))
 			continue
 		}
 
@@ -122,7 +122,7 @@ func (s *RagServer) UploadPdf(
 
 		err = s.DB.StoreChunk(ctx, docID, i, cleanContent, embeddingVec, metadata)
 		if err != nil {
-			logger.GetLogger().Error("Failed to store chunk", zap.Int("chunk_id", i), zap.Error(err))
+			logger.Get().Error("Failed to store chunk", zap.Int("chunk_id", i), zap.Error(err))
 			continue
 		}
 		successfulChunks++
@@ -137,7 +137,7 @@ func (s *RagServer) UploadPdf(
 		"chunks":    len(chunks),
 	})
 	if err != nil {
-		logger.GetLogger().Error("Failed to cache document", zap.String("doc_id", docID), zap.Error(err))
+		logger.Get().Error("Failed to cache document", zap.String("doc_id", docID), zap.Error(err))
 	}
 
 	return connect.NewResponse(&ragv1.UploadPdfResponse{
@@ -154,20 +154,20 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 	// 检测内容类型并选择合适的分块策略
 	if s.detectMarkdownContent(content) {
 		// Markdown内容，使用AST-based chunking
-		logger.GetLogger().Debug("Detected Markdown content, using AST-based chunking")
+		logger.Get().Debug("Detected Markdown content, using AST-based chunking")
 		chunker, err := chunking.NewMarkdownChunker(
 			chunkConfig.MaxChunkSize,
 			chunkConfig.OverlapSize,
 			true,
 		)
 		if err != nil {
-			logger.GetLogger().Warn("Failed to create markdown chunker, falling back to intelligent text chunking", zap.Error(err))
+			logger.Get().Warn("Failed to create markdown chunker, falling back to intelligent text chunking", zap.Error(err))
 			return s.intelligentTextChunking(content), nil
 		}
 		chunks, err := chunker.ChunkMarkdown(content)
 		if err != nil {
 			// AST分块失败时，回退到智能文本分块
-			logger.GetLogger().Warn("AST-based chunking failed, falling back to intelligent text chunking", zap.Error(err))
+			logger.Get().Warn("AST-based chunking failed, falling back to intelligent text chunking", zap.Error(err))
 			return s.intelligentTextChunking(content), nil
 		}
 		return chunks, nil
@@ -506,7 +506,7 @@ func (s *RagServer) cleanEmptyLines(content string) string {
 	cleanedContent := strings.Join(finalLines, "\n")
 	cleanedContent = strings.TrimSpace(cleanedContent)
 
-	logger.GetLogger().Debug("Cleaned empty lines",
+	logger.Get().Debug("Cleaned empty lines",
 		zap.Int("original_lines", len(lines)),
 		zap.Int("cleaned_lines", len(cleanedLines)),
 		zap.Int("final_lines", len(finalLines)),
@@ -641,7 +641,7 @@ func (s *RagServer) detectMarkdownContent(content string) bool {
 		(float64(score)/float64(totalLines) > 0.20) ||
 		(markdownFeatures.headers >= 3)
 
-	logger.GetLogger().Debug("Markdown detection analysis",
+	logger.Get().Debug("Markdown detection analysis",
 		zap.Int("total_lines", totalLines),
 		zap.Int("headers", markdownFeatures.headers),
 		zap.Int("lists", markdownFeatures.lists),

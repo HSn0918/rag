@@ -1,3 +1,4 @@
+// Package doc2x provides a client for Doc2X document parsing service.
 package doc2x
 
 import (
@@ -5,25 +6,50 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-resty/resty/v2"
+	"github.com/hsn0918/rag/internal/clients/base"
 	"github.com/hsn0918/rag/internal/config"
 )
 
+// Service name for error reporting
+const serviceName = "doc2x"
 
-type Client struct {
-	client *resty.Client
-	config config.ServiceConfig
+// Default timeouts for Doc2X operations
+const (
+	DefaultTimeout    = 30 * time.Second
+	ProcessingTimeout = 5 * time.Minute // for long-running parsing operations
+)
+
+// DocumentParser defines the interface for document parsing operations.
+type DocumentParser interface {
+	UploadPDF(pdfData []byte) (*UploadResponse, error)
+	PreUpload() (*PreUploadResponse, error)
+	UploadToPresignedURL(url string, fileData []byte) error
+	GetStatus(uid string) (*StatusResponse, error)
+	ConvertParse(req ConvertRequest) (*ConvertResponse, error)
+	GetConvertResult(uid string) (*ConvertResultResponse, error)
+	DownloadFile(url string) ([]byte, error)
+	WaitForParsing(uid string, pollInterval time.Duration) (*StatusResponse, error)
+	WaitForConversion(uid string, pollInterval time.Duration) (*ConvertResultResponse, error)
 }
 
+// Client provides Doc2X document parsing functionality.
+// It wraps the HTTP client with domain-specific methods.
+type Client struct {
+	httpClient *base.HTTPClient
+	cfg        config.ServiceConfig
+}
+
+// Compile-time check to ensure Client implements DocumentParser interface
+var _ DocumentParser = (*Client)(nil)
+
+// NewClient creates a new Doc2X client with standardized configuration.
+// It uses the base HTTP client for consistent error handling and retry logic.
 func NewClient(cfg config.ServiceConfig) *Client {
-	client := resty.New().
-		SetBaseURL(cfg.BaseURL).
-		SetHeader("Authorization", "Bearer "+cfg.APIKey).
-		SetTimeout(30 * time.Second)
+	httpClient := base.NewHTTPClient(serviceName, cfg, DefaultTimeout)
 
 	return &Client{
-		client: client,
-		config: cfg,
+		httpClient: httpClient,
+		cfg:        cfg,
 	}
 }
 
@@ -86,127 +112,75 @@ type ConvertResultResponse struct {
 	} `json:"data"`
 }
 
+// UploadPDF uploads PDF data for parsing.
+// It returns the upload response containing the UID for tracking.
 func (c *Client) UploadPDF(pdfData []byte) (*UploadResponse, error) {
 	var result UploadResponse
-	resp, err := c.client.R().
-		SetBody(pdfData).
-		SetResult(&result).
-		Post("/api/v2/parse/pdf")
-
-	if err != nil {
-		return nil, fmt.Errorf("upload pdf failed: %w", err)
+	if err := c.httpClient.Post("/api/v2/parse/pdf", pdfData, &result); err != nil {
+		return nil, err
 	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("upload pdf failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
 	return &result, nil
 }
 
+// PreUpload initiates a presigned upload flow.
+// It returns presigned URL for direct file upload.
 func (c *Client) PreUpload() (*PreUploadResponse, error) {
 	var result PreUploadResponse
-	resp, err := c.client.R().
-		SetResult(&result).
-		Post("/api/v2/parse/preupload")
-
-	if err != nil {
-		return nil, fmt.Errorf("preupload failed: %w", err)
+	if err := c.httpClient.Post("/api/v2/parse/preupload", nil, &result); err != nil {
+		return nil, err
 	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("preupload failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
 	return &result, nil
 }
 
+// UploadToPresignedURL uploads file data to a presigned URL.
+// This is used in conjunction with PreUpload for large file uploads.
 func (c *Client) UploadToPresignedURL(url string, fileData []byte) error {
-	resp, err := resty.New().R().
-		SetBody(fileData).
-		Put(url)
-
-	if err != nil {
-		return fmt.Errorf("upload to presigned url failed: %w", err)
-	}
-
-	if resp.StatusCode() != 200 {
-		return fmt.Errorf("upload to presigned url failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return nil
+	return c.httpClient.Put(url, fileData)
 }
 
+// GetStatus checks the parsing status for a given UID.
+// It returns detailed status information including progress and results.
 func (c *Client) GetStatus(uid string) (*StatusResponse, error) {
 	var result StatusResponse
-	resp, err := c.client.R().
-		SetQueryParam("uid", uid).
-		SetResult(&result).
-		Get("/api/v2/parse/status")
-
-	if err != nil {
-		return nil, fmt.Errorf("get status failed: %w", err)
+	params := map[string]string{"uid": uid}
+	if err := c.httpClient.Get("/api/v2/parse/status", params, &result); err != nil {
+		return nil, err
 	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("get status failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
 	return &result, nil
 }
 
+// ConvertParse initiates document conversion with specified parameters.
+// It returns conversion tracking information.
 func (c *Client) ConvertParse(req ConvertRequest) (*ConvertResponse, error) {
 	var result ConvertResponse
-	resp, err := c.client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(req).
-		SetResult(&result).
-		Post("/api/v2/convert/parse")
-
-	if err != nil {
-		return nil, fmt.Errorf("convert parse failed: %w", err)
+	if err := c.httpClient.Post("/api/v2/convert/parse", req, &result); err != nil {
+		return nil, err
 	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("convert parse failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
 	return &result, nil
 }
 
+// GetConvertResult retrieves conversion results for a given UID.
+// It returns the final converted document information.
 func (c *Client) GetConvertResult(uid string) (*ConvertResultResponse, error) {
 	var result ConvertResultResponse
-	resp, err := c.client.R().
-		SetQueryParam("uid", uid).
-		SetResult(&result).
-		Get("/api/v2/convert/parse/result")
-
-	if err != nil {
-		return nil, fmt.Errorf("get convert result failed: %w", err)
+	params := map[string]string{"uid": uid}
+	if err := c.httpClient.Get("/api/v2/convert/parse/result", params, &result); err != nil {
+		return nil, err
 	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("get convert result failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
 	return &result, nil
 }
 
+// DownloadFile downloads a file from the given URL.
+// It handles URL unescaping and returns the raw file content.
 func (c *Client) DownloadFile(url string) ([]byte, error) {
+	// Fix URL encoding issues
 	url = strings.ReplaceAll(url, "\\u0026", "&")
-
-	resp, err := resty.New().R().Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("download file failed: %w", err)
-	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("download file failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return resp.Body(), nil
+	return c.httpClient.GetRaw(url)
 }
 
+// WaitForParsing polls the parsing status until completion or failure.
+// It uses the provided poll interval to check status periodically.
+// Returns the final status or an error if parsing fails.
 func (c *Client) WaitForParsing(uid string, pollInterval time.Duration) (*StatusResponse, error) {
 	for {
 		status, err := c.GetStatus(uid)
@@ -215,20 +189,28 @@ func (c *Client) WaitForParsing(uid string, pollInterval time.Duration) (*Status
 		}
 
 		if status.Code != "success" {
-			return nil, fmt.Errorf("parse failed: %s - %s", status.Code, status.Msg)
+			return nil, base.NewClientError(serviceName, "wait for parsing",
+				fmt.Errorf("parse failed: %s - %s", status.Code, status.Msg))
 		}
 
 		switch status.Data.Status {
 		case "success":
 			return status, nil
 		case "failed":
-			return nil, fmt.Errorf("parse failed: %s", status.Data.Detail)
+			return nil, base.NewClientError(serviceName, "wait for parsing",
+				fmt.Errorf("parse failed: %s", status.Data.Detail))
 		case "processing":
+			time.Sleep(pollInterval)
+		default:
+			// Unknown status, continue polling
 			time.Sleep(pollInterval)
 		}
 	}
 }
 
+// WaitForConversion polls the conversion status until completion or failure.
+// It uses the provided poll interval to check status periodically.
+// Returns the final result or an error if conversion fails.
 func (c *Client) WaitForConversion(uid string, pollInterval time.Duration) (*ConvertResultResponse, error) {
 	for {
 		result, err := c.GetConvertResult(uid)
@@ -237,15 +219,20 @@ func (c *Client) WaitForConversion(uid string, pollInterval time.Duration) (*Con
 		}
 
 		if result.Code != "success" {
-			return nil, fmt.Errorf("convert failed: %s", result.Code)
+			return nil, base.NewClientError(serviceName, "wait for conversion",
+				fmt.Errorf("convert failed: %s", result.Code))
 		}
 
 		switch result.Data.Status {
 		case "success":
 			return result, nil
 		case "failed":
-			return nil, fmt.Errorf("convert failed")
+			return nil, base.NewClientError(serviceName, "wait for conversion",
+				fmt.Errorf("convert failed"))
 		case "processing":
+			time.Sleep(pollInterval)
+		default:
+			// Unknown status, continue polling
 			time.Sleep(pollInterval)
 		}
 	}

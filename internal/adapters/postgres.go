@@ -30,6 +30,8 @@ type VectorDB interface {
 	GetTableNames() (documents, chunks string)
 }
 
+var _ VectorDB = (*PostgresVectorDB)(nil)
+
 // PostgresVectorDB 实现了 VectorDB 接口，使用 PostgreSQL 和 pgvector。
 type PostgresVectorDB struct {
 	conn           *pgx.Conn
@@ -54,14 +56,14 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 		return nil, fmt.Errorf("数据库 ping 失败: %w", err)
 	}
 
-	logger.GetLogger().Info("成功连接到 PostgreSQL 数据库")
+	logger.Get().Info("成功连接到 PostgreSQL 数据库")
 
 	// 3. 启用 pgvector 扩展
 	_, err = conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
 	if err != nil {
 		return nil, fmt.Errorf("无法启用 vector 扩展: %w", err)
 	}
-	logger.GetLogger().Info("pgvector 扩展已启用")
+	logger.Get().Info("pgvector 扩展已启用")
 
 	// 4. 根据维度生成表名
 	documentsTable := fmt.Sprintf("rag_documents_%dd", dimensions)
@@ -100,7 +102,7 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	if err != nil {
 		return nil, fmt.Errorf("无法创建 document_chunks 表: %w", err)
 	}
-	logger.GetLogger().Info(fmt.Sprintf("表 %s 和 %s 已准备就绪", documentsTable, chunksTable))
+	logger.Get().Info(fmt.Sprintf("表 %s 和 %s 已准备就绪", documentsTable, chunksTable))
 
 	return &PostgresVectorDB{
 		conn:           conn,
@@ -181,7 +183,7 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 			&metadataJSON,
 		)
 		if err != nil {
-			logger.GetLogger().Error("扫描搜索结果失败", zap.Error(err))
+			logger.Get().Error("扫描搜索结果失败", zap.Error(err))
 			continue
 		}
 
@@ -189,7 +191,7 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 		if len(metadataJSON) > 0 {
 			err = json.Unmarshal(metadataJSON, &result.Metadata)
 			if err != nil {
-				logger.GetLogger().Error("解析metadata失败", zap.Error(err))
+				logger.Get().Error("解析metadata失败", zap.Error(err))
 				result.Metadata = make(map[string]interface{})
 			}
 		} else {
@@ -203,7 +205,7 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 		return nil, fmt.Errorf("遍历搜索结果失败: %w", err)
 	}
 
-	logger.GetLogger().Info(fmt.Sprintf("向量搜索完成，找到 %d 个相似块", len(results)))
+	logger.Get().Info(fmt.Sprintf("向量搜索完成，找到 %d 个相似块", len(results)))
 	return results, nil
 }
 

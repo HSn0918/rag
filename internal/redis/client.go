@@ -10,15 +10,42 @@ import (
 	"github.com/hsn0918/rag/internal/config"
 )
 
+// RedisClient defines the interface for Redis operations.
+// This interface enables easier testing and potential implementation swapping.
+type RedisClient interface {
+	// Basic operations
+	Set(ctx context.Context, key string, value string, expiration time.Duration) error
+	Get(ctx context.Context, key string) (string, error)
+	Delete(ctx context.Context, keys ...string) error
+	Exists(ctx context.Context, key string) (bool, error)
+
+	// JSON operations
+	SetJSON(ctx context.Context, key string, value interface{}, expiration time.Duration) error
+	GetJSON(ctx context.Context, key string, dest interface{}) error
+
+	// Hash operations
+	SetHash(ctx context.Context, key string, fields map[string]string, expiration time.Duration) error
+	GetHash(ctx context.Context, key string) (map[string]string, error)
+	GetHashField(ctx context.Context, key, field string) (string, error)
+	DeleteHashFields(ctx context.Context, key string, fields ...string) error
+
+	// Utility operations
+	Ping(ctx context.Context) error
+	FlushDB(ctx context.Context) error
+	Close()
+}
+
+// Client implements RedisClient using rueidis.
 type Client struct {
 	client rueidis.Client
 }
 
+// ClientOptions holds configuration for Redis client creation.
 type ClientOptions struct {
-	Host     string
-	Port     int
-	Password string
-	DB       int
+	Host     string `validate:"required"`
+	Port     int    `validate:"min=1,max=65535"`
+	Password string // optional
+	DB       int    `validate:"min=0,max=15"`
 }
 
 func NewClient(opts ClientOptions) (*Client, error) {

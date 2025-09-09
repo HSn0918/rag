@@ -41,7 +41,7 @@ func NewConfig() (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cfg, nil
+	return cfg, nil
 }
 
 func NewLogger() (*zap.Logger, error) {
@@ -59,7 +59,7 @@ func NewDatabase(cfg *config.Config) (adapters.VectorDB, error) {
 
 	embeddingModel := cfg.Services.Embedding.Model
 	dimensions := embedding.GetDefaultDimensions(embeddingModel)
-	logger.GetLogger().Info("使用embedding模型", zap.String("model", embeddingModel), zap.Int("dimensions", dimensions))
+	logger.Get().Info("使用embedding模型", zap.String("model", embeddingModel), zap.Int("dimensions", dimensions))
 
 	return adapters.NewPostgresVectorDB(dsn, dimensions)
 }
@@ -99,7 +99,7 @@ func NewHTTPServer(ragServer *RagServer, cfg *config.Config) *http.Server {
 	mux.Handle(path, handler)
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
-	logger.GetLogger().Info("服务正在启动", zap.String("address", addr))
+	logger.Get().Info("服务正在启动", zap.String("address", addr))
 
 	return &http.Server{
 		Addr:    addr,
@@ -133,10 +133,10 @@ func (c *protoJSONCodec) Unmarshal(data []byte, v any) error {
 func StartServer(httpServer *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner) {
 	lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			logger.GetLogger().Info("HTTP server starting", zap.String("addr", httpServer.Addr))
+			logger.Get().Info("HTTP server starting", zap.String("addr", httpServer.Addr))
 			go func() {
 				if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logger.GetLogger().Error("HTTP server failed", zap.Error(err))
+					logger.Get().Error("HTTP server failed", zap.Error(err))
 					err := shutdowner.Shutdown()
 					if err != nil {
 						return
@@ -146,7 +146,7 @@ func StartServer(httpServer *http.Server, lifecycle fx.Lifecycle, shutdowner fx.
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			logger.GetLogger().Info("HTTP server stopping")
+			logger.Get().Info("HTTP server stopping")
 			return httpServer.Shutdown(ctx)
 		},
 	})

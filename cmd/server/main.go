@@ -11,31 +11,36 @@ import (
 
 func main() {
 	if err := logger.Init(); err != nil {
-		panic("初始化日志失败: " + err.Error())
+		panic("logger initialization failed: " + err.Error())
 	}
-	defer logger.Sync()
+	defer func() {
+		if syncErr := logger.Sync(); syncErr != nil {
+			// Ignore sync errors on stdout/stderr
+			// This is common in Docker environments
+		}
+	}()
 
 	app := fx.New(
 		server.Module,
 		fx.NopLogger,
 	)
 
-	// 启动应用并保持运行
+	// Start application with timeout
 	startCtx, cancel := context.WithTimeout(context.Background(), fx.DefaultTimeout)
 	defer cancel()
 
 	if err := app.Start(startCtx); err != nil {
-		logger.GetLogger().Fatal("应用启动失败", zap.Error(err))
+		logger.Get().Fatal("application startup failed", zap.Error(err))
 	}
 
-	// 等待应用结束
+	// Wait for application termination
 	<-app.Done()
 
-	// 停止应用
-	stopCtx, cancel := context.WithTimeout(context.Background(), fx.DefaultTimeout)
-	defer cancel()
+	// Stop application gracefully
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), fx.DefaultTimeout)
+	defer stopCancel()
 
 	if err := app.Stop(stopCtx); err != nil {
-		logger.GetLogger().Error("应用停止失败", zap.Error(err))
+		logger.Get().Error("application shutdown failed", zap.Error(err))
 	}
 }

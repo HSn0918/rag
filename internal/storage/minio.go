@@ -1,3 +1,5 @@
+// Package storage provides object storage functionality for the RAG system.
+// It follows Uber Go Style Guide conventions for interface design and error handling.
 package storage
 
 import (
@@ -11,11 +13,28 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// ObjectStorage defines the interface for object storage operations.
+type ObjectStorage interface {
+	GeneratePresignedUploadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error)
+	GeneratePresignedDownloadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error)
+	UploadFile(ctx context.Context, objectKey string, reader io.Reader, objectSize int64, contentType string) error
+	DownloadFile(ctx context.Context, objectKey string) (*minio.Object, error)
+	DeleteFile(ctx context.Context, objectKey string) error
+	GetFileInfo(ctx context.Context, objectKey string) (minio.ObjectInfo, error)
+	CheckFileExists(ctx context.Context, objectKey string) (bool, error)
+}
+
+// MinIOClient provides MinIO-based object storage implementation.
+// It implements the ObjectStorage interface with full feature support.
 type MinIOClient struct {
 	client     *minio.Client
 	bucketName string
 }
 
+// Compile-time check to ensure MinIOClient implements ObjectStorage interface
+var _ ObjectStorage = (*MinIOClient)(nil)
+
+// MinIOConfig holds configuration parameters for MinIO client initialization.
 type MinIOConfig struct {
 	Endpoint        string
 	AccessKeyID     string
@@ -24,8 +43,10 @@ type MinIOConfig struct {
 	UseSSL          bool
 }
 
+// NewMinIOClient creates a new MinIO client with the provided configuration.
+// It automatically creates the bucket if it doesn't exist.
 func NewMinIOClient(config MinIOConfig) (*MinIOClient, error) {
-	// 初始化 MinIO 客户端
+	// Initialize MinIO client
 	client, err := minio.New(config.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(config.AccessKeyID, config.SecretAccessKey, ""),
 		Secure: config.UseSSL,
@@ -34,7 +55,7 @@ func NewMinIOClient(config MinIOConfig) (*MinIOClient, error) {
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
 	}
 
-	// 检查 bucket 是否存在，不存在则创建
+	// Check if bucket exists, create if it doesn't
 	ctx := context.Background()
 	exists, err := client.BucketExists(ctx, config.BucketName)
 	if err != nil {
@@ -54,10 +75,10 @@ func NewMinIOClient(config MinIOConfig) (*MinIOClient, error) {
 	}, nil
 }
 
-// GeneratePresignedUploadURL 生成预签名上传 URL
+// GeneratePresignedUploadURL generates a presigned URL for file upload.
+// The URL expires after the specified duration.
 func (mc *MinIOClient) GeneratePresignedUploadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error) {
-
-	// 生成预签名 PUT URL
+	// Generate presigned PUT URL
 	presignedURL, err := mc.client.PresignedPutObject(ctx, mc.bucketName, objectKey, expires)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
@@ -66,10 +87,10 @@ func (mc *MinIOClient) GeneratePresignedUploadURL(ctx context.Context, objectKey
 	return presignedURL.String(), nil
 }
 
-// GeneratePresignedDownloadURL 生成预签名下载 URL
+// GeneratePresignedDownloadURL generates a presigned URL for file download.
+// The URL expires after the specified duration.
 func (mc *MinIOClient) GeneratePresignedDownloadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error) {
-
-	// 生成预签名 GET URL
+	// Generate presigned GET URL
 	presignedURL, err := mc.client.PresignedGetObject(ctx, mc.bucketName, objectKey, expires, url.Values{})
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned download URL: %w", err)
@@ -78,7 +99,8 @@ func (mc *MinIOClient) GeneratePresignedDownloadURL(ctx context.Context, objectK
 	return presignedURL.String(), nil
 }
 
-// UploadFile 直接上传文件
+// UploadFile directly uploads a file to the object storage.
+// It requires the content type to be specified for proper handling.
 func (mc *MinIOClient) UploadFile(ctx context.Context, objectKey string, reader io.Reader, objectSize int64, contentType string) error {
 	_, err := mc.client.PutObject(ctx, mc.bucketName, objectKey, reader, objectSize, minio.PutObjectOptions{
 		ContentType: contentType,
@@ -90,7 +112,8 @@ func (mc *MinIOClient) UploadFile(ctx context.Context, objectKey string, reader 
 	return nil
 }
 
-// DownloadFile 下载文件
+// DownloadFile downloads a file from the object storage.
+// Returns a minio.Object that must be closed by the caller.
 func (mc *MinIOClient) DownloadFile(ctx context.Context, objectKey string) (*minio.Object, error) {
 	object, err := mc.client.GetObject(ctx, mc.bucketName, objectKey, minio.GetObjectOptions{})
 	if err != nil {
@@ -100,7 +123,8 @@ func (mc *MinIOClient) DownloadFile(ctx context.Context, objectKey string) (*min
 	return object, nil
 }
 
-// DeleteFile 删除文件
+// DeleteFile removes a file from the object storage.
+// It returns an error if the file doesn't exist or cannot be deleted.
 func (mc *MinIOClient) DeleteFile(ctx context.Context, objectKey string) error {
 	err := mc.client.RemoveObject(ctx, mc.bucketName, objectKey, minio.RemoveObjectOptions{})
 	if err != nil {
@@ -110,7 +134,8 @@ func (mc *MinIOClient) DeleteFile(ctx context.Context, objectKey string) error {
 	return nil
 }
 
-// GetFileInfo 获取文件信息
+// GetFileInfo retrieves metadata information about a file.
+// Returns ObjectInfo with details like size, modification time, etc.
 func (mc *MinIOClient) GetFileInfo(ctx context.Context, objectKey string) (minio.ObjectInfo, error) {
 	objInfo, err := mc.client.StatObject(ctx, mc.bucketName, objectKey, minio.StatObjectOptions{})
 	if err != nil {
@@ -120,11 +145,12 @@ func (mc *MinIOClient) GetFileInfo(ctx context.Context, objectKey string) (minio
 	return objInfo, nil
 }
 
-// CheckFileExists 检查文件是否存在
+// CheckFileExists checks if a file exists in the object storage.
+// Returns true if the file exists, false if it doesn't, and an error for other failures.
 func (mc *MinIOClient) CheckFileExists(ctx context.Context, objectKey string) (bool, error) {
 	_, err := mc.client.StatObject(ctx, mc.bucketName, objectKey, minio.StatObjectOptions{})
 	if err != nil {
-		// 检查是否是 "对象不存在" 错误
+		// Check if it's a "object not found" error
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
 			return false, nil
 		}
