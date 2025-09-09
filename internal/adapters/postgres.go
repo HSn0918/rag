@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
+	"github.com/hsn0918/rag/internal/logger"
 	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 )
@@ -39,14 +39,14 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 		return nil, fmt.Errorf("数据库 ping 失败: %w", err)
 	}
 
-	log.Println("成功连接到 PostgreSQL 数据库。")
+	logger.GetLogger().Info("成功连接到 PostgreSQL 数据库")
 
 	// 3. 启用 pgvector 扩展
 	_, err = conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
 	if err != nil {
 		return nil, fmt.Errorf("无法启用 vector 扩展: %w", err)
 	}
-	log.Println("pgvector 扩展已启用。")
+	logger.GetLogger().Info("pgvector 扩展已启用")
 
 	// 4. 创建文档表和文档块表
 	createDocumentsTable := `
@@ -81,7 +81,7 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	if err != nil {
 		return nil, fmt.Errorf("无法创建 document_chunks 表: %w", err)
 	}
-	log.Println("rag_documents 和 document_chunks 表已准备就绪。")
+	logger.GetLogger().Info("rag_documents 和 document_chunks 表已准备就绪")
 
 	return &PostgresVectorDB{conn: conn}, nil
 }

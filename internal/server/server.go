@@ -23,26 +23,3 @@ type RagServer struct {
 	Reranker  *rerank.Client
 	Config    config.Config
 }
-
-// NewRagServer 是 RagServer 的构造函数。
-func NewRagServer(
-	db adapters.VectorDB,
-	cache *redis.CacheService,
-	storageClient *storage.MinIOClient,
-	doc2xClient *doc2x.Client,
-	embeddingClient *embedding.Client,
-	llmClient *openai.Client,
-	rerankClient *rerank.Client,
-	cfg config.Config,
-) *RagServer {
-	return &RagServer{
-		DB:        db,
-		Cache:     cache,
-		Storage:   storageClient,
-		Doc2X:     doc2xClient,
-		Embedding: embeddingClient,
-		LLM:       llmClient,
-		Reranker:  rerankClient,
-		Config:    cfg,
-	}
-}

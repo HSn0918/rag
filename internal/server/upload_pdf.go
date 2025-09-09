@@ -11,6 +11,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/chunking"
 	ragv1 "github.com/hsn0918/rag/internal/gen/proto/rag/v1"
+	"github.com/hsn0918/rag/internal/logger"
+	"go.uber.org/zap"
 )
 
 // UploadPdf 接口的实现。
@@ -45,7 +47,12 @@ func (s *RagServer) UploadPdf(
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to download file: %w", err))
 	}
-	defer object.Close()
+	defer func() {
+		err := object.Close()
+		if err != nil {
+			logger.GetLogger().Error("failed to close file", zap.Error(err))
+		}
+	}()
 
 	// 读取 PDF 数据
 	pdfData, err := io.ReadAll(object)
@@ -67,6 +74,9 @@ func (s *RagServer) UploadPdf(
 	if textContent == "" {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("no text extracted from PDF"))
 	}
+
+	// 清理文档中的空行
+	textContent = s.cleanEmptyLines(textContent)
 
 	// 获取处理UID，用于后续的元数据存储
 	md5Hash := fmt.Sprintf("%x", md5.Sum(pdfData))
@@ -99,7 +109,7 @@ func (s *RagServer) UploadPdf(
 		// 生成嵌入向量
 		embeddingVec, err := s.generateEmbedding(ctx, cleanContent)
 		if err != nil {
-			fmt.Printf("Failed to generate embedding for chunk %d: %v\n", i, err)
+			logger.GetLogger().Error("Failed to generate embedding for chunk", zap.Int("chunk_id", i), zap.Error(err))
 			continue
 		}
 
@@ -114,7 +124,7 @@ func (s *RagServer) UploadPdf(
 
 		err = s.DB.StoreChunk(ctx, docID, i, cleanContent, embeddingVec, metadata)
 		if err != nil {
-			fmt.Printf("Failed to store chunk %d: %v\n", i, err)
+			logger.GetLogger().Error("Failed to store chunk", zap.Int("chunk_id", i), zap.Error(err))
 			continue
 		}
 		successfulChunks++
@@ -129,7 +139,7 @@ func (s *RagServer) UploadPdf(
 		"chunks":    len(chunks),
 	})
 	if err != nil {
-		fmt.Printf("Failed to cache document: %v\n", err)
+		logger.GetLogger().Error("Failed to cache document", zap.String("doc_id", docID), zap.Error(err))
 	}
 
 	return connect.NewResponse(&ragv1.UploadPdfResponse{
@@ -148,7 +158,7 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 		chunks, err := chunker.ChunkMarkdown(content)
 		if err != nil {
 			// AST分块失败时，回退到简单文本分块
-			fmt.Printf("AST-based chunking failed: %v, falling back to simple text chunking\n", err)
+			logger.GetLogger().Warn("AST-based chunking failed, falling back to simple text chunking", zap.Error(err))
 			return s.simpleTextChunking(content), nil
 		}
 		return chunks, nil
@@ -208,4 +218,36 @@ func (s *RagServer) simpleTextChunking(content string) []chunking.Chunk {
 	}
 
 	return chunks
+}
+
+// cleanEmptyLines removes excessive empty lines from text content
+func (s *RagServer) cleanEmptyLines(content string) string {
+	// 分割文本为行
+	lines := strings.Split(content, "\n")
+	var cleanedLines []string
+
+	for _, line := range lines {
+		// 检查是否为空行（只包含空白字符）
+		trimmedLine := strings.TrimSpace(line)
+
+		// 只保留非空行
+		if trimmedLine != "" {
+			cleanedLines = append(cleanedLines, trimmedLine)
+		}
+	}
+
+	// 重新连接行
+	cleanedContent := strings.Join(cleanedLines, "\n")
+
+	// 去除开头和结尾的空白
+	cleanedContent = strings.TrimSpace(cleanedContent)
+
+	logger.GetLogger().Debug("Cleaned empty lines",
+		zap.Int("original_lines", len(lines)),
+		zap.Int("cleaned_lines", len(cleanedLines)),
+		zap.Int("original_length", len(content)),
+		zap.Int("cleaned_length", len(cleanedContent)),
+	)
+
+	return cleanedContent
 }

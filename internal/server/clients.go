@@ -21,7 +21,7 @@ type Clients struct {
 }
 
 // NewClients 根据配置创建所有客户端
-func NewClients(cfg config.Config) (*Clients, error) {
+func NewClients(cfg *config.Config) (*Clients, error) {
 	// 创建 MinIO 客户端
 	minioClient, err := storage.NewMinIOClient(storage.MinIOConfig{
 		Endpoint:        cfg.MinIO.Endpoint,
@@ -50,14 +50,14 @@ func NewRagServerWithClients(
 	clients *Clients,
 	cfg config.Config,
 ) *RagServer {
-	return NewRagServer(
-		db,
-		cache,
-		clients.Storage,
-		clients.Doc2X,
-		clients.Embedding,
-		clients.LLM,
-		clients.Reranker,
-		cfg,
-	)
+	return &RagServer{
+		DB:        db,
+		Cache:     cache,
+		Storage:   clients.Storage,
+		Doc2X:     clients.Doc2X,
+		Embedding: clients.Embedding,
+		LLM:       clients.LLM,
+		Reranker:  clients.Reranker,
+		Config:    cfg,
+	}
 }

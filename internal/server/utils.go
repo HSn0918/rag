@@ -14,6 +14,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/clients/doc2x"
+	"github.com/hsn0918/rag/internal/logger"
+	"go.uber.org/zap"
 )
 
 // generateObjectKey 生成唯一的对象键
@@ -98,7 +100,7 @@ func (s *RagServer) processPDFWithCaching(ctx context.Context, pdfData []byte) (
 	processedExists, err := s.Storage.CheckFileExists(ctx, processedTextKey)
 	if err == nil && processedExists {
 		// MinIO中有缓存的处理结果，直接读取
-		fmt.Printf("MinIO processed text cache hit for MD5: %s\n", md5Hash)
+		logger.GetLogger().Info("MinIO processed text cache hit", zap.String("md5", md5Hash))
 
 		object, err := s.Storage.DownloadFile(ctx, processedTextKey)
 		if err != nil {
@@ -113,7 +115,7 @@ func (s *RagServer) processPDFWithCaching(ctx context.Context, pdfData []byte) (
 
 		textContent = string(textBytes)
 		pageCount = 0 // 无法从缓存中获取页数，使用默认值
-		fmt.Printf("Successfully loaded processed text from MinIO cache (length: %d)\n", len(textContent))
+		logger.GetLogger().Info("Successfully loaded processed text from MinIO cache", zap.Int("length", len(textContent)))
 	} else {
 		// MinIO中没有缓存，需要处理PDF
 		textContent, pageCount, err = s.processWithDoc2X(ctx, pdfData, md5Hash, processedTextKey)
@@ -128,7 +130,7 @@ func (s *RagServer) processPDFWithCaching(ctx context.Context, pdfData []byte) (
 // processWithDoc2X handles Doc2X processing with Redis caching
 func (s *RagServer) processWithDoc2X(ctx context.Context, pdfData []byte, md5Hash, processedTextKey string) (string, int, error) {
 	// 检查Redis中的Doc2X响应缓存
-	fmt.Printf("MinIO processed text cache miss for MD5: %s, checking Redis cache...\n", md5Hash)
+	logger.GetLogger().Info("MinIO processed text cache miss, checking Redis cache", zap.String("md5", md5Hash))
 
 	var statusResp *doc2x.StatusResponse
 	cachedResp := &doc2x.StatusResponse{}
@@ -136,10 +138,10 @@ func (s *RagServer) processWithDoc2X(ctx context.Context, pdfData []byte, md5Has
 	if err == nil && cachedResp.Data != nil {
 		// Redis缓存命中，直接使用缓存的结果
 		statusResp = cachedResp
-		fmt.Printf("Redis Doc2X cache hit for MD5: %s\n", md5Hash)
+		logger.GetLogger().Info("Redis Doc2X cache hit", zap.String("md5", md5Hash))
 	} else {
 		// 两级缓存都未命中，进行Doc2X处理
-		fmt.Printf("Both caches miss for MD5: %s, processing with Doc2X...\n", md5Hash)
+		logger.GetLogger().Info("Both caches miss, processing with Doc2X", zap.String("md5", md5Hash))
 
 		// 使用 Doc2X 客户端上传并处理 PDF
 		uploadResp, err := s.Doc2X.UploadPDF(pdfData)
@@ -161,9 +163,9 @@ func (s *RagServer) processWithDoc2X(ctx context.Context, pdfData []byte, md5Has
 		if statusResp.Data != nil && statusResp.Data.Status == "success" {
 			err = s.Cache.CacheDoc2XResponse(ctx, md5Hash, statusResp)
 			if err != nil {
-				fmt.Printf("Failed to cache Doc2X response in Redis: %v\n", err)
+				logger.GetLogger().Error("Failed to cache Doc2X response in Redis", zap.String("md5", md5Hash), zap.Error(err))
 			} else {
-				fmt.Printf("Doc2X response cached in Redis for MD5: %s\n", md5Hash)
+				logger.GetLogger().Info("Doc2X response cached in Redis", zap.String("md5", md5Hash))
 			}
 		}
 	}
@@ -189,9 +191,9 @@ func (s *RagServer) processWithDoc2X(ctx context.Context, pdfData []byte, md5Has
 		textReader := bytes.NewReader([]byte(textContent))
 		err = s.Storage.UploadFile(ctx, processedTextKey, textReader, int64(len(textContent)), "text/plain")
 		if err != nil {
-			fmt.Printf("Failed to cache processed text in MinIO: %v\n", err)
+			logger.GetLogger().Error("Failed to cache processed text in MinIO", zap.String("md5", md5Hash), zap.Error(err))
 		} else {
-			fmt.Printf("Processed text cached in MinIO for MD5: %s (length: %d)\n", md5Hash, len(textContent))
+			logger.GetLogger().Info("Processed text cached in MinIO", zap.String("md5", md5Hash), zap.Int("length", len(textContent)))
 		}
 	}
 

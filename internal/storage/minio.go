@@ -67,8 +67,7 @@ func (mc *MinIOClient) GeneratePresignedUploadURL(ctx context.Context, objectKey
 }
 
 // GeneratePresignedDownloadURL 生成预签名下载 URL
-func (mc *MinIOClient) GeneratePresignedDownloadURL(objectKey string, expires time.Duration) (string, error) {
-	ctx := context.Background()
+func (mc *MinIOClient) GeneratePresignedDownloadURL(ctx context.Context, objectKey string, expires time.Duration) (string, error) {
 
 	// 生成预签名 GET URL
 	presignedURL, err := mc.client.PresignedGetObject(ctx, mc.bucketName, objectKey, expires, url.Values{})
