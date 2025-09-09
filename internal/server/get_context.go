@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/adapters"
@@ -241,9 +242,12 @@ func (s *RagServer) cleanAndFormatChunkContent(content string) string {
 	// 确保内容不会太长
 	result := strings.Join(cleanedLines, "\n")
 	if len(result) > 1000 {
-		// 截断过长的内容，保留前800字符
-		result = result[:800] + "..."
+		// 安全的UTF-8截断，保留前800字符
+		result = s.safeUTF8Truncate(result, 800) + "..."
 	}
+
+	// 确保结果是有效的UTF-8
+	result = s.sanitizeUTF8(result)
 
 	return result
 }
@@ -526,4 +530,55 @@ func (s *RagServer) generateSmartResponse(query string, chunks []adapters.ChunkS
 	responseBuilder.WriteString("\n\n💡 如需了解更具体的信息，建议您查看上述相关内容或提出更详细的问题。")
 
 	return responseBuilder.String()
+}
+
+// safeUTF8Truncate 安全地截断UTF-8字符串，避免在多字节字符中间截断
+func (s *RagServer) safeUTF8Truncate(str string, maxBytes int) string {
+	if len(str) <= maxBytes {
+		return str
+	}
+
+	// 确保不在多字节字符中间截断
+	for i := maxBytes; i >= 0 && i > maxBytes-4; i-- {
+		if utf8.ValidString(str[:i]) {
+			return str[:i]
+		}
+	}
+
+	// 如果找不到合适的截断点，使用rune级别截断
+	runes := []rune(str)
+	result := ""
+	for _, r := range runes {
+		test := result + string(r)
+		if len(test) > maxBytes {
+			break
+		}
+		result = test
+	}
+
+	return result
+}
+
+// sanitizeUTF8 清理并确保字符串包含有效的UTF-8字符
+func (s *RagServer) sanitizeUTF8(str string) string {
+	if utf8.ValidString(str) {
+		return str
+	}
+
+	// 移除或替换无效的UTF-8字符
+	var buf strings.Builder
+	buf.Grow(len(str))
+
+	for len(str) > 0 {
+		r, size := utf8.DecodeRuneInString(str)
+		if r == utf8.RuneError && size == 1 {
+			// 跳过无效字节
+			str = str[1:]
+		} else {
+			buf.WriteRune(r)
+			str = str[size:]
+		}
+	}
+
+	return buf.String()
 }

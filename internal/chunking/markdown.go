@@ -14,6 +14,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	extensionast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 )
@@ -39,14 +40,14 @@ const (
 
 // Default configuration values.
 const (
-	DefaultMaxChunkSize   = 2000
-	DefaultMinChunkSize   = 500
-	DefaultOverlapSize    = 200
-	DefaultMaxKeywords    = 10
-	DefaultMaxSummaryLen  = 100
-	DefaultMaxEmptyLines  = 2
-	DefaultMinWordLen     = 2
-	DefaultTokenRatio     = 1.3 // English word to token ratio
+	DefaultMaxChunkSize  = 2000
+	DefaultMinChunkSize  = 500
+	DefaultOverlapSize   = 200
+	DefaultMaxKeywords   = 10
+	DefaultMaxSummaryLen = 100
+	DefaultMaxEmptyLines = 2
+	DefaultMinWordLen    = 2
+	DefaultTokenRatio    = 1.3 // English word to token ratio
 )
 
 // Common errors.
@@ -191,7 +192,7 @@ func NewKeywordExtractor() *KeywordExtractor {
 		"有": true, "和": true, "就": true, "不": true, "人": true,
 		"都": true, "一": true, "个": true, "上": true, "也": true,
 		"很": true, "到": true, "说": true, "要": true, "去": true, "你": true,
-		
+
 		// English stop words
 		"the": true, "a": true, "an": true, "and": true, "or": true,
 		"but": true, "in": true, "on": true, "at": true, "to": true,
@@ -395,6 +396,11 @@ func (omc *OptimizedMarkdownChunker) buildDocumentTree(doc ast.Node, source []by
 // extractNodeInfo extracts relevant information from an AST node.
 func (omc *OptimizedMarkdownChunker) extractNodeInfo(node ast.Node, source []byte) NodeInfo {
 	info := NodeInfo{}
+
+	// Skip inline nodes - they don't have Lines() method
+	if omc.isInlineNode(node) {
+		return info
+	}
 
 	// Extract position information
 	if hasLines, ok := node.(interface{ Lines() *text.Segments }); ok {
@@ -632,9 +638,18 @@ func (omc *OptimizedMarkdownChunker) preprocessContent(content string) string {
 func (omc *OptimizedMarkdownChunker) isInlineNode(node ast.Node) bool {
 	switch node.Kind() {
 	case ast.KindText, ast.KindEmphasis, ast.KindLink, ast.KindImage,
-		ast.KindCodeSpan, ast.KindAutoLink:
+		ast.KindCodeSpan, ast.KindAutoLink, ast.KindRawHTML, ast.KindString:
+		return true
+	case extensionast.KindStrikethrough:
 		return true
 	default:
+		// Check if it's a known inline node by checking its parent type
+		if node.Parent() != nil {
+			switch node.Parent().Kind() {
+			case ast.KindEmphasis, ast.KindLink:
+				return true
+			}
+		}
 		return false
 	}
 }
@@ -874,7 +889,7 @@ func (ke *KeywordExtractor) ExtractKeywords(content string) []string {
 	// Use a word regex pattern for consistent extraction
 	wordRegex := regexp.MustCompile(`\b\w+\b`)
 	words := wordRegex.FindAllString(content, -1)
-	
+
 	wordCount := make(map[string]int, len(words)/2) // Estimate capacity
 
 	for _, word := range words {

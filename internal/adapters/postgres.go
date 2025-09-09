@@ -23,19 +23,23 @@ type ChunkSearchResult struct {
 
 // VectorDB 定义了向量数据库操作的接口。
 type VectorDB interface {
-	Store(content string, embedding []float32) error
-	Search(embedding []float32, k int) ([]string, error)
 	StoreDocument(ctx context.Context, title, content string, metadata map[string]interface{}) (string, error)
 	StoreChunk(ctx context.Context, docID string, chunkIndex int, content string, embedding []float32, metadata map[string]interface{}) error
 	SearchSimilarChunks(ctx context.Context, queryVector []float32, limit int, threshold float32) ([]ChunkSearchResult, error)
+	GetDimensions() int
+	GetTableNames() (documents, chunks string)
 }
 
 // PostgresVectorDB 实现了 VectorDB 接口，使用 PostgreSQL 和 pgvector。
 type PostgresVectorDB struct {
-	conn *pgx.Conn
+	conn           *pgx.Conn
+	dimensions     int
+	documentsTable string
+	chunksTable    string
 }
 
 // NewPostgresVectorDB 创建并返回一个新的 PostgresVectorDB 实例。
+// dimensions: 向量维度，用于生成表名和向量字段
 func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) {
 	ctx := context.Background()
 
@@ -59,28 +63,32 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	}
 	logger.GetLogger().Info("pgvector 扩展已启用")
 
-	// 4. 创建文档表和文档块表
-	createDocumentsTable := `
-	CREATE TABLE IF NOT EXISTS rag_documents (
+	// 4. 根据维度生成表名
+	documentsTable := fmt.Sprintf("rag_documents_%dd", dimensions)
+	chunksTable := fmt.Sprintf("document_chunks_%dd", dimensions)
+
+	// 5. 创建文档表和文档块表
+	createDocumentsTable := fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS %s (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		title TEXT NOT NULL,
 		content TEXT NOT NULL,
 		metadata JSONB DEFAULT '{}',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-	);`
+	);`, documentsTable)
 
 	createChunksTable := fmt.Sprintf(`
-	CREATE TABLE IF NOT EXISTS document_chunks (
+	CREATE TABLE IF NOT EXISTS %s (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		document_id UUID NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
+		document_id UUID NOT NULL REFERENCES %s(id) ON DELETE CASCADE,
 		chunk_index INTEGER NOT NULL,
 		content TEXT NOT NULL,
 		embedding vector(%d),
 		metadata JSONB DEFAULT '{}',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 		UNIQUE(document_id, chunk_index)
-	);`, dimensions)
+	);`, chunksTable, documentsTable, dimensions)
 
 	// 创建表
 	_, err = conn.Exec(ctx, createDocumentsTable)
@@ -92,19 +100,14 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	if err != nil {
 		return nil, fmt.Errorf("无法创建 document_chunks 表: %w", err)
 	}
-	logger.GetLogger().Info("rag_documents 和 document_chunks 表已准备就绪")
+	logger.GetLogger().Info(fmt.Sprintf("表 %s 和 %s 已准备就绪", documentsTable, chunksTable))
 
-	return &PostgresVectorDB{conn: conn}, nil
-}
-
-// Store 将内容和其对应的向量嵌入存储到数据库中。(已废弃 - 使用 StoreChunk 代替)
-func (db *PostgresVectorDB) Store(content string, embedding []float32) error {
-	return fmt.Errorf("Store method is deprecated, use StoreChunk instead")
-}
-
-// Search 在数据库中搜索与给定向量最相似的 k 个结果。(已废弃 - 需要重新实现)
-func (db *PostgresVectorDB) Search(embedding []float32, k int) ([]string, error) {
-	return nil, fmt.Errorf("Search method needs to be reimplemented for new schema")
+	return &PostgresVectorDB{
+		conn:           conn,
+		dimensions:     dimensions,
+		documentsTable: documentsTable,
+		chunksTable:    chunksTable,
+	}, nil
 }
 
 // StoreDocument 存储文档并返回文档ID
@@ -117,7 +120,7 @@ func (db *PostgresVectorDB) StoreDocument(ctx context.Context, title, content st
 	}
 
 	_, err = db.conn.Exec(ctx,
-		"INSERT INTO rag_documents (id, title, content, metadata) VALUES ($1, $2, $3, $4)",
+		fmt.Sprintf("INSERT INTO %s (id, title, content, metadata) VALUES ($1, $2, $3, $4)", db.documentsTable),
 		docID, title, content, metadataJSON)
 	if err != nil {
 		return "", fmt.Errorf("存储文档失败: %w", err)
@@ -134,7 +137,7 @@ func (db *PostgresVectorDB) StoreChunk(ctx context.Context, docID string, chunkI
 	}
 
 	_, err = db.conn.Exec(ctx,
-		"INSERT INTO document_chunks (document_id, chunk_index, content, embedding, metadata) VALUES ($1, $2, $3, $4, $5)",
+		fmt.Sprintf("INSERT INTO %s (document_id, chunk_index, content, embedding, metadata) VALUES ($1, $2, $3, $4, $5)", db.chunksTable),
 		docID, chunkIndex, content, pgvector.NewVector(embedding), metadataJSON)
 	if err != nil {
 		return fmt.Errorf("存储文档块失败: %w", err)
@@ -146,18 +149,18 @@ func (db *PostgresVectorDB) StoreChunk(ctx context.Context, docID string, chunkI
 // SearchSimilarChunks 基于向量相似性搜索相关文档块
 func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector []float32, limit int, threshold float32) ([]ChunkSearchResult, error) {
 	// 使用余弦相似度搜索相似的文档块
-	query := `
+	query := fmt.Sprintf(`
 		SELECT 
 			c.id as chunk_id,
 			c.document_id,
 			c.content,
 			1 - (c.embedding <=> $1) as similarity,
 			c.metadata
-		FROM document_chunks c
+		FROM %s c
 		WHERE 1 - (c.embedding <=> $1) > $2
 		ORDER BY c.embedding <=> $1
 		LIMIT $3
-	`
+	`, db.chunksTable)
 
 	rows, err := db.conn.Query(ctx, query, pgvector.NewVector(queryVector), threshold, limit)
 	if err != nil {
@@ -202,4 +205,14 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 
 	logger.GetLogger().Info(fmt.Sprintf("向量搜索完成，找到 %d 个相似块", len(results)))
 	return results, nil
+}
+
+// GetDimensions 返回向量维度
+func (db *PostgresVectorDB) GetDimensions() int {
+	return db.dimensions
+}
+
+// GetTableNames 返回文档表和分块表的名称
+func (db *PostgresVectorDB) GetTableNames() (documents, chunks string) {
+	return db.documentsTable, db.chunksTable
 }
