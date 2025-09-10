@@ -22,7 +22,6 @@ message PreUploadRequest {
   // 文件名，必须是PDF格式
   string filename = 1 [(buf.validate.field).string = {
     min_len: 1
-    max_len: 255
     pattern: "^[^/\\\\:*?\"<>|]+\\.(pdf|PDF)$"
   }];
 }
@@ -40,12 +39,11 @@ message PreUploadResponse {
 // 上传PDF请求
 message UploadPdfRequest {
   // 文件键不能为空
-  string file_key = 1 [(buf.validate.field).string.min_len = 1];
+  string file_key = 1 [(buf.validate.field).required = true];
 
   // 文件名不能为空且必须是PDF文件
   string filename = 2 [(buf.validate.field).string = {
     min_len: 1
-    max_len: 255
     pattern: "^[^/\\\\:*?\"<>|]+\\.(pdf|PDF)$"
   }];
 }

@@ -43,7 +43,7 @@ func (s *RagServer) GetContext(
 		logger.Get().Error("大模型关键词提取失败", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate keywords: %w", err))
 	}
-	logger.Get().Debug("大模型关键词提取完成",
+	logger.Get().Info("大模型关键词提取完成",
 		zap.Strings("keywords", keywords),
 	)
 
@@ -65,7 +65,7 @@ func (s *RagServer) GetContext(
 		logger.Get().Error("向量相似性搜索失败", zap.Error(err))
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
 	}
-
+	logger.Get().Info("similarChunks", zap.Any("similar_chunks", similarChunks))
 	if len(similarChunks) == 0 {
 		logger.Get().Warn("未找到相关文档", zap.String("query", query))
 		return connect.NewResponse(&ragv1.GetContextResponse{
@@ -75,7 +75,7 @@ func (s *RagServer) GetContext(
 
 	// 第四步：智能重排序 - 综合向量相似度和关键词匹配
 	rankedChunks := s.rerankChunksWithKeywords(similarChunks, query, keywords)
-
+	logger.Get().Info("rankedChunks", zap.Any("ranked_chunks", rankedChunks))
 	// 第五步：使用大模型生成个性化总结回答
 	contextContent, err := s.generateContextSummary(ctx, rankedChunks, query)
 	if err != nil {

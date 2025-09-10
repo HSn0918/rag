@@ -15,8 +15,6 @@ func main() {
 	}
 	defer func() {
 		if syncErr := logger.Sync(); syncErr != nil {
-			// Ignore sync errors on stdout/stderr
-			// This is common in Docker environments
 		}
 	}()
 
