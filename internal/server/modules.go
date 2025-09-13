@@ -72,7 +72,7 @@ func NewCacheService(redisClient *redis.Client) *redis.CacheService {
 	return redis.NewCacheService(redisClient)
 }
 
-func NewRagServer(db adapters.VectorDB, cache *redis.CacheService, clients *Clients, cfg *config.Config) *RagServer {
+func NewRagServer(db adapters.VectorDB, cache *redis.CacheService, clients *Clients, cfg *config.Config) (*RagServer, error) {
 	return NewRagServerWithClients(db, cache, clients, *cfg)
 }
 

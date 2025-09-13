@@ -49,15 +49,31 @@ func NewRagServerWithClients(
 	cache *redis.CacheService,
 	clients *Clients,
 	cfg config.Config,
-) *RagServer {
-	return &RagServer{
-		DB:        db,
-		Cache:     cache,
-		Storage:   clients.Storage,
-		Doc2X:     clients.Doc2X,
-		Embedding: clients.Embedding,
-		LLM:       clients.LLM,
-		Reranker:  clients.Reranker,
-		Config:    cfg,
+) (*RagServer, error) {
+	server := &RagServer{
+		DB:              db,
+		Cache:           cache,
+		Storage:         clients.Storage,
+		Doc2X:           clients.Doc2X,
+		Embedding:       clients.Embedding,
+		LLM:             clients.LLM,
+		Reranker:        clients.Reranker,
+		Config:          &cfg,
+		EmbeddingClient: clients.Embedding,
 	}
+
+	// Initialize SearchOptimizer with proper configuration
+	searchOptimizer, err := NewSearchOptimizer(
+		server,
+		20, // Initial candidates
+		5,  // Final results
+		WithMinSimilarity(0.25),
+		WithParallelScoring(true),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	server.SearchOptimizer = searchOptimizer
+	return server, nil
 }

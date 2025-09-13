@@ -131,12 +131,42 @@ func (s *RagServer) UploadPdf(
 	}), nil
 }
 
-// ... (The rest of the file remains unchanged)
+// chunkTextContent applies semantic-aware chunking to text content
 func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 	chunkConfig := s.Config.Chunking
 
+	// Check if semantic chunking is enabled
+	useSemanticChunking := s.Config.Chunking.EnableSemantic
+
+	if useSemanticChunking && s.EmbeddingClient != nil {
+		logger.Get().Info("Using semantic chunking")
+
+		semanticChunker, err := chunking.NewSemanticChunker(
+			chunkConfig.MaxChunkSize,
+			chunkConfig.MinChunkSize,
+			s.EmbeddingClient,
+			chunking.WithModel(s.Config.Services.Embedding.Model),
+			chunking.WithSimilarityThreshold(s.Config.Chunking.SimilarityThreshold),
+			chunking.WithParallelProcessing(true),
+		)
+		if err != nil {
+			logger.Get().Error("Failed to create semantic chunker, falling back to standard chunking", zap.Error(err))
+			// Fall back to standard chunking
+		} else {
+			ctx := context.Background()
+			chunks, err := semanticChunker.ChunkText(ctx, content)
+			if err != nil {
+				logger.Get().Error("Semantic chunking failed, falling back to standard chunking", zap.Error(err))
+				// Fall back to standard chunking
+			} else {
+				return chunks, nil
+			}
+		}
+	}
+
+	// Standard chunking fallback
 	if s.detectMarkdownContent(content) {
-		logger.Get().Debug("Detected Markdown content, using Markdown chunker")
+		logger.Get().Debug("Using standard Markdown chunker")
 		chunker, err := chunking.NewMarkdownChunker(
 			chunkConfig.MaxChunkSize,
 			chunkConfig.OverlapSize,
@@ -149,9 +179,17 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 		return chunker.ChunkMarkdown(content)
 	}
 
-	logger.Get().Debug("Detected plain text content, using intelligent text chunker")
-	logger.Get().Warn("IntelligentTextChunker not yet implemented in chunking package. Returning zero chunks.")
-	return []chunking.Chunk{}, nil
+	logger.Get().Debug("Detected plain text content, using standard chunker")
+	// For plain text, use the markdown chunker which handles plain text well
+	chunker, err := chunking.NewMarkdownChunker(
+		chunkConfig.MaxChunkSize,
+		chunkConfig.OverlapSize,
+		false,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return chunker.ChunkMarkdown(content)
 }
 
 func (s *RagServer) cleanEmptyLines(content string) string {

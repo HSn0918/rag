@@ -26,37 +26,33 @@ type ServiceConfig struct {
 	Model string `mapstructure:"model" validate:"required"`
 }
 
-// ChunkingConfig defines text chunking parameters with intelligent defaults.
-// Zero values are replaced with sensible defaults during validation.
+// ChunkingConfig defines text chunking parameters.
+// Fields are organized by feature with validation tags.
 type ChunkingConfig struct {
-	// Size constraints
-	MaxChunkSize int `mapstructure:"max_chunk_size" validate:"min=100,max=10000"`
-	MinChunkSize int `mapstructure:"min_chunk_size" validate:"min=50"`
+	// Size constraints (required)
+	MaxChunkSize int `mapstructure:"max_chunk_size" validate:"required,min=100,max=10000"`
+	MinChunkSize int `mapstructure:"min_chunk_size" validate:"required,min=50"`
 	OverlapSize  int `mapstructure:"overlap_size" validate:"min=0"`
 
-	// Boundary detection settings
-	SentenceBoundary  bool `mapstructure:"sentence_boundary"`
-	ParagraphBoundary bool `mapstructure:"paragraph_boundary"`
-
-	// Adaptive behavior
-	AdaptiveSize   bool    `mapstructure:"adaptive_size"`
-	SizeMultiplier float64 `mapstructure:"size_multiplier" validate:"min=0.1,max=5.0"`
+	// Semantic processing (optional)
+	EnableSemantic      bool    `mapstructure:"enable_semantic"`
+	SimilarityThreshold float64 `mapstructure:"similarity_threshold" validate:"min=0.0,max=1.0"`
 }
 
 // Validate checks the chunking configuration and sets defaults.
 func (c *ChunkingConfig) Validate() error {
 	// Set defaults for zero values
 	if c.MaxChunkSize == 0 {
-		c.MaxChunkSize = 512
+		c.MaxChunkSize = 2000
 	}
 	if c.MinChunkSize == 0 {
-		c.MinChunkSize = 100
+		c.MinChunkSize = 200
 	}
 	if c.OverlapSize == 0 {
-		c.OverlapSize = 50
+		c.OverlapSize = 200
 	}
-	if c.SizeMultiplier == 0 {
-		c.SizeMultiplier = 1.5
+	if c.SimilarityThreshold == 0 {
+		c.SimilarityThreshold = 0.75
 	}
 
 	// Validation rules

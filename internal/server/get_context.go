@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
@@ -26,6 +27,7 @@ func (s *RagServer) GetContext(
 	ctx context.Context,
 	req *connect.Request[ragv1.GetContextRequest],
 ) (*connect.Response[ragv1.GetContextResponse], error) {
+	startTime := time.Now()
 	query := req.Msg.GetQuery()
 
 	if query == "" {
@@ -59,11 +61,29 @@ func (s *RagServer) GetContext(
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate query embedding: %w", err))
 	}
 
-	// 第三步：执行向量相似性搜索，获取候选文档块
-	similarChunks, err := s.searchSimilarChunks(ctx, queryVector, 15) // 获取更多候选用于重排
-	if err != nil {
-		logger.Get().Error("向量相似性搜索失败", zap.Error(err))
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
+	// 第三步：使用优化的搜索策略
+	var similarChunks []adapters.ChunkSearchResult
+
+	// Check if search optimizer is available
+	if s.SearchOptimizer != nil {
+		// Use optimized hybrid search
+		similarChunks, err = s.SearchOptimizer.OptimizedSearch(ctx, query, queryVector)
+		if err != nil {
+			logger.Get().Error("优化搜索失败，回退到标准搜索", zap.Error(err))
+			// Fallback to standard search
+			similarChunks, err = s.searchSimilarChunks(ctx, queryVector, 15)
+			if err != nil {
+				logger.Get().Error("向量相似性搜索失败", zap.Error(err))
+				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
+			}
+		}
+	} else {
+		// Standard vector similarity search
+		similarChunks, err = s.searchSimilarChunks(ctx, queryVector, 15) // 获取更多候选用于重排
+		if err != nil {
+			logger.Get().Error("向量相似性搜索失败", zap.Error(err))
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
+		}
 	}
 	logger.Get().Info("similarChunks", zap.Any("similar_chunks", similarChunks))
 	if len(similarChunks) == 0 {
@@ -84,11 +104,15 @@ func (s *RagServer) GetContext(
 		contextContent = s.buildContextResponse(rankedChunks, query)
 	}
 
+	// 计算处理时间
+	processingTime := time.Since(startTime).Milliseconds()
+
 	logger.Get().Info("智能文档检索完成",
 		zap.String("query", query),
 		zap.Int("chunks_found", len(similarChunks)),
 		zap.Int("chunks_used", len(rankedChunks)),
 		zap.Int("response_length", len(contextContent)),
+		zap.Int64("processing_time_ms", processingTime),
 	)
 
 	return connect.NewResponse(&ragv1.GetContextResponse{
@@ -256,7 +280,7 @@ func (s *RagServer) cleanAndFormatChunkContent(content string) string {
 // 调用配置的LLM服务(如DeepSeek)进行中文分词和关键词提取，
 // 自动过滤停用词，保留专业术语和实体名词，
 // 如果LLM调用失败会降级到本地简单分词
-func (s *RagServer) generateKeywords(ctx context.Context, query string) ([]string, error) {
+func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string, error) {
 	messages := []openai.Message{
 		{
 			Role: "system",
@@ -266,23 +290,46 @@ func (s *RagServer) generateKeywords(ctx context.Context, query string) ([]strin
 1. 提取3-8个最相关的关键词
 2. 忽略停词（如：的、了、在、是、我、有、和等）
 3. 保留专业术语和实体名词
-4. 每行一个关键词，不要编号
+4. 必须严格按照XML格式输出
 5. 不要添加任何解释或其他内容
+
+输出格式（必须是有效的XML）：
+
+<keywords>
+    <keyword>关键词1</keyword>
+    <keyword>关键词2</keyword>
+    <keyword>关键词3</keyword>
+</keywords>
 
 示例：
 输入："请帮我找一下关于机器学习算法的资料"
 输出：
-机器学习
-算法
-资料`,
+<keywords>
+    <keyword>机器学习</keyword>
+    <keyword>算法</keyword>
+    <keyword>资料</keyword>
+</keywords>
+
+注意：只输出XML，不要添加任何其他文字。`,
 		},
 		{
-			Role:    "user",
-			Content: query,
+			Role: "user",
+			Content: fmt.Sprintf(`请从以下查询中提取关键词：
+
+查询内容：%s
+
+任务说明：
+1. 识别查询中的核心概念和实体
+2. 提取专业术语和关键名词
+3. 保留对搜索有价值的词汇
+4. 过滤掉常见的停用词
+
+请严格按照XML格式输出关键词，不要添加任何额外说明。`, query),
 		},
 	}
 
 	resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
+
 	if err != nil {
 		logger.Get().Error("LLM关键词提取失败", zap.Error(err))
 		// 降级为简单分词
@@ -293,15 +340,23 @@ func (s *RagServer) generateKeywords(ctx context.Context, query string) ([]strin
 		return s.fallbackKeywords(query), nil
 	}
 
-	// 解析LLM返回的关键词
+	logger.Get().Info("关键词 LLM", zap.Any("resp", resp))
+	// 解析LLM返回的XML格式关键词
 	content := resp.Choices[0].Message.Content
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-	var keywords []string
+	keywords := s.parseKeywordsXML(content)
 
-	for _, line := range lines {
-		keyword := strings.TrimSpace(line)
-		if keyword != "" && len(keyword) > 1 {
-			keywords = append(keywords, keyword)
+	if len(keywords) == 0 {
+		// 如果XML解析失败，尝试按行解析（兼容旧格式）
+		lines := strings.Split(strings.TrimSpace(content), "\n")
+		for _, line := range lines {
+			keyword := strings.TrimSpace(line)
+			// 跳过XML标签
+			if strings.HasPrefix(keyword, "<") && strings.HasSuffix(keyword, ">") {
+				continue
+			}
+			if keyword != "" && len(keyword) > 1 {
+				keywords = append(keywords, keyword)
+			}
 		}
 	}
 
@@ -310,6 +365,48 @@ func (s *RagServer) generateKeywords(ctx context.Context, query string) ([]strin
 	}
 
 	return keywords, nil
+}
+
+// parseKeywordsXML 解析XML格式的关键词响应
+func (s *RagServer) parseKeywordsXML(xmlContent string) []string {
+	var keywords []string
+
+	// 简单的XML解析，提取<keyword>标签内容
+	lines := strings.Split(xmlContent, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// 查找 <keyword>xxx</keyword> 模式
+		if strings.HasPrefix(line, "<keyword>") && strings.HasSuffix(line, "</keyword>") {
+			// 提取标签之间的内容
+			start := len("<keyword>")
+			end := len(line) - len("</keyword>")
+			if end > start {
+				keyword := strings.TrimSpace(line[start:end])
+				// 验证关键词有效性
+				if keyword != "" && len(keyword) > 1 && !strings.Contains(keyword, "<") {
+					keywords = append(keywords, keyword)
+				}
+			}
+		}
+	}
+
+	// 如果没有找到标准格式，尝试更宽松的解析
+	if len(keywords) == 0 {
+		// 使用正则表达式查找所有<keyword>内容</keyword>模式
+		content := strings.ReplaceAll(xmlContent, "\n", " ")
+		parts := strings.Split(content, "<keyword>")
+		for _, part := range parts {
+			if idx := strings.Index(part, "</keyword>"); idx > 0 {
+				keyword := strings.TrimSpace(part[:idx])
+				if keyword != "" && len(keyword) > 1 && !strings.Contains(keyword, "<") {
+					keywords = append(keywords, keyword)
+				}
+			}
+		}
+	}
+
+	return keywords
 }
 
 // fallbackKeywords 本地降级分词实现
@@ -441,7 +538,7 @@ func (s *RagServer) calculateAdvancedChunkScore(chunk adapters.ChunkSearchResult
 //
 // 基于检索到的文档片段，使用大模型进行深度分析和智能总结，
 // 生成针对用户查询的高质量、结构化回答
-func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapters.ChunkSearchResult, query string) (string, error) {
+func (s *RagServer) generateContextSummary(_ context.Context, chunks []adapters.ChunkSearchResult, query string) (string, error) {
 	if len(chunks) == 0 {
 		return "", fmt.Errorf("no chunks to summarize")
 	}
@@ -464,34 +561,97 @@ func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapter
 		rawContextBuilder.WriteString("\n\n")
 	}
 
-	// 构建LLM总结提示词
+	// 构建LLM总结提示词 - 强制输出XML格式
 	messages := []openai.Message{
 		{
 			Role: "system",
-			Content: `你是一个专业的信息分析师，擅长根据用户查询对多个信息源进行智能总结和分析。
+			Content: `你是一个专业的RAG系统内容组织器。你的任务是整理和呈现从知识库中检索到的信息。
 
-你的任务是：
-1. 仔细阅读用户的查询和检索到的相关信息
-2. 分析信息之间的关联性和互补性
-3. 生成一个结构化、准确、有用的回答
-4. 如果信息不足以完全回答查询，请诚实说明
-5. 适当引用具体的信息来源以增加可信度
+重要规则：
+1. 你不是在回答用户问题，而是在整理和呈现检索到的相关内容
+2. 不要做推理或给出直接答案，只总结和组织检索到的信息
+3. 让用户基于提供的信息自行判断和得出结论
+4. 必须严格按照XML格式输出，不要添加任何其他内容
 
-回答格式要求：
-- 使用清晰的Markdown格式
-- 重点信息用**粗体**突出
-- 分点说明时使用有序或无序列表
-- 保持逻辑清晰、语言简洁
-- 长度控制在800字以内`,
+输出格式要求（必须是有效的XML）：
+
+<rag_response>
+    <summary>
+        <text>一句话概括检索到的内容主题</text>
+    </summary>
+
+    <main_content>
+        <info_points>
+            <point>
+                <title>信息点标题1</title>
+                <content>从文档中提取的具体信息</content>
+            </point>
+            <point>
+                <title>信息点标题2</title>
+                <content>从文档中提取的具体信息</content>
+            </point>
+            <point>
+                <title>信息点标题3</title>
+                <content>从文档中提取的具体信息</content>
+            </point>
+        </info_points>
+    </main_content>
+
+    <detailed_content>
+        <section>
+            <title>主题1</title>
+            <content>详细内容描述</content>
+        </section>
+        <section>
+            <title>主题2</title>
+            <content>详细内容描述</content>
+        </section>
+    </detailed_content>
+
+    <key_points>
+        <point>从检索内容中提取的关键要点1</point>
+        <point>从检索内容中提取的关键要点2</point>
+        <point>从检索内容中提取的关键要点3</point>
+    </key_points>
+
+    <completeness>
+        <assessment>信息是否完整覆盖查询主题的评估</assessment>
+        <missing_info>如有信息缺失请在此说明</missing_info>
+    </completeness>
+
+    <sources>
+        <source>
+            <id>1</id>
+            <similarity>0.XX</similarity>
+            <summary>信息片段的简要总结</summary>
+        </source>
+        <source>
+            <id>2</id>
+            <similarity>0.XX</similarity>
+            <summary>信息片段的简要总结</summary>
+        </source>
+        <source>
+            <id>3</id>
+            <similarity>0.XX</similarity>
+            <summary>信息片段的简要总结</summary>
+        </source>
+    </sources>
+</rag_response>
+
+注意：
+- 所有内容必须基于检索到的信息，不要添加额外推理
+- 使用"根据检索到的信息"、"文档中提到"等表述
+- 避免使用"答案是"、"可以得出"等直接回答的表述
+- 输出必须是格式良好的XML，所有特殊字符必须正确转义`,
 		},
 		{
 			Role: "user",
 			Content: fmt.Sprintf(`用户查询：%s
 
-相关信息：
+从知识库检索到的相关信息：
 %s
 
-请基于以上信息，为用户提供准确、有用的回答。如果检索到的信息不足以完全回答用户的查询，请明确指出信息不足的地方，并建议用户如何获得更完整的答案。`, query, rawContextBuilder.String()),
+请严格按照XML格式整理和呈现以上检索到的内容，不要直接回答用户问题，而是让用户基于这些信息自行判断。记住：只输出XML，不要添加任何其他文字。`, query, rawContextBuilder.String()),
 		},
 	}
 
@@ -614,7 +774,7 @@ func (s *RagServer) generateQueryTypeGuidance(queryType string) string {
 }
 
 // generateQuerySpecificSummary 生成针对特定查询的总结
-func (s *RagServer) generateQuerySpecificSummary(query string, chunks []adapters.ChunkSearchResult) string {
+func (s *RagServer) generateQuerySpecificSummary(query string, _ []adapters.ChunkSearchResult) string {
 	queryType := s.analyzeQueryType(query)
 
 	summaryMap := map[string]string{
