@@ -17,8 +17,8 @@ func HTTPValidator() connect.UnaryInterceptorFunc {
 		panic(fmt.Sprintf("failed to create protovalidate validator: %v", err))
 	}
 
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return connect.UnaryFunc(func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			// 获取请求消息
 			msg := req.Any()
 
@@ -46,8 +46,8 @@ func HTTPValidator() connect.UnaryInterceptorFunc {
 
 			// 验证通过，继续处理请求
 			return next(ctx, req)
-		})
-	})
+		}
+	}
 }
 
 // formatValidationError 格式化验证错误信息

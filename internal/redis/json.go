@@ -1,13 +1,13 @@
 package redis
 
 import (
-	"encoding/json"
+	"github.com/bytedance/sonic"
 )
 
 func marshalJSON(v interface{}) ([]byte, error) {
-	return json.Marshal(v)
+	return sonic.Marshal(v)
 }
 
 func unmarshalJSON(data []byte, v interface{}) error {
-	return json.Unmarshal(data, v)
+	return sonic.Unmarshal(data, v)
 }

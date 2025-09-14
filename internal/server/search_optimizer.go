@@ -1,4 +1,3 @@
-// Package server provides RAG server functionality.
 package server
 
 import (
@@ -15,19 +14,29 @@ import (
 	"go.uber.org/zap"
 )
 
-// Common errors.
+// Common errors for search optimization.
 var (
+	// ErrInvalidOptConfig indicates invalid optimizer configuration.
 	ErrInvalidOptConfig = errors.New("invalid optimizer configuration")
-	ErrNoSearchResults  = errors.New("no search results found")
+	// ErrNoSearchResults indicates no search results were found.
+	ErrNoSearchResults = errors.New("no search results found")
 )
 
-// SearchOptimizer provides advanced search optimization algorithms.
+// SearchOptimizer provides advanced search optimization algorithms
+// combining vector search with keyword matching and quality scoring.
+//
+// The optimizer implements a hybrid search strategy that improves
+// search relevance by considering multiple ranking signals.
 type SearchOptimizer struct {
 	ragServer *RagServer
 	cfg       Config
 }
 
-// Config defines search optimizer configuration.
+// Config defines the configuration for SearchOptimizer.
+//
+// All weights should sum to 1.0 for proper score normalization.
+// The configuration allows fine-tuning the balance between different
+// ranking signals based on your specific use case.
 type Config struct {
 	// Required fields.
 	InitialCandidates int
@@ -47,38 +56,55 @@ type Config struct {
 	CacheSearchResults    bool
 }
 
-// Option configures a SearchOptimizer.
+// Option is a functional option for configuring SearchOptimizer.
+//
+// Options follow the functional options pattern for flexible and
+// extensible configuration.
 type Option func(*Config)
 
-// WithVectorWeight sets the vector similarity weight.
+// WithVectorWeight sets the weight for vector similarity scoring.
+//
+// The weight should be between 0 and 1, and all weights should sum to 1.0.
 func WithVectorWeight(weight float64) Option {
 	return func(c *Config) {
 		c.VectorWeight = weight
 	}
 }
 
-// WithKeywordWeight sets the keyword matching weight.
+// WithKeywordWeight sets the weight for keyword matching scoring.
+//
+// The weight should be between 0 and 1, and all weights should sum to 1.0.
 func WithKeywordWeight(weight float64) Option {
 	return func(c *Config) {
 		c.KeywordWeight = weight
 	}
 }
 
-// WithMinSimilarity sets the minimum similarity threshold.
+// WithMinSimilarity sets the minimum similarity threshold for filtering results.
+//
+// Results with similarity scores below this threshold will be excluded.
 func WithMinSimilarity(threshold float64) Option {
 	return func(c *Config) {
 		c.MinSimilarity = threshold
 	}
 }
 
-// WithParallelScoring enables parallel scoring.
+// WithParallelScoring enables or disables parallel scoring of search results.
+//
+// When enabled, scoring operations will be performed concurrently for better
+// performance with large result sets.
 func WithParallelScoring(enabled bool) Option {
 	return func(c *Config) {
 		c.EnableParallelScoring = enabled
 	}
 }
 
-// NewSearchOptimizer creates a new search optimizer.
+// NewSearchOptimizer creates a new SearchOptimizer with the specified configuration.
+//
+// The initialCandidates parameter determines how many results to fetch initially,
+// while finalResults determines how many results to return after reranking.
+//
+// Returns an error if the configuration is invalid.
 func NewSearchOptimizer(
 	ragServer *RagServer,
 	initialCandidates, finalResults int,
@@ -119,7 +145,16 @@ func NewSearchOptimizer(
 	}, nil
 }
 
-// OptimizedSearch performs an optimized hybrid search.
+// OptimizedSearch performs an optimized hybrid search combining vector and keyword signals.
+//
+// This method:
+//  1. Extracts search components from the query
+//  2. Performs parallel vector and keyword searches
+//  3. Merges and deduplicates results
+//  4. Applies hybrid scoring
+//  5. Reranks and filters results
+//
+// Returns the final ranked results or an error if the search fails.
 func (so *SearchOptimizer) OptimizedSearch(ctx context.Context, query string, queryVector []float32) ([]adapters.ChunkSearchResult, error) {
 	if query == "" || len(queryVector) == 0 {
 		return nil, fmt.Errorf("%w: query and vector are required", ErrInvalidOptConfig)
@@ -175,7 +210,10 @@ func (so *SearchOptimizer) OptimizedSearch(ctx context.Context, query string, qu
 	return finalResults, nil
 }
 
-// searchComponents holds extracted search components.
+// searchComponents holds extracted search components from a query.
+//
+// These components are used by various scoring algorithms to calculate
+// relevance scores.
 type searchComponents struct {
 	originalQuery string
 	keywords      []string
@@ -184,6 +222,10 @@ type searchComponents struct {
 }
 
 // extractSearchComponents analyzes the query to extract search components.
+//
+// This method identifies keywords, phrases, and potential entities from
+// the query text. It filters out stop words and extracts meaningful terms
+// for search optimization.
 func (so *SearchOptimizer) extractSearchComponents(query string) searchComponents {
 	components := searchComponents{
 		originalQuery: query,
@@ -229,12 +271,18 @@ func (so *SearchOptimizer) extractSearchComponents(query string) searchComponent
 }
 
 // performKeywordSearch performs keyword-based search.
+//
+// This is a placeholder implementation. In a production system, this would
+// query the database using keyword matching algorithms.
 func (so *SearchOptimizer) performKeywordSearch(_ context.Context, _ []string) []adapters.ChunkSearchResult {
 	// Placeholder - actual implementation would query the database.
 	return []adapters.ChunkSearchResult{}
 }
 
-// mergeResults combines results from different search methods.
+// mergeResults combines and deduplicates results from different search methods.
+//
+// When a chunk appears in multiple result sets, their scores are averaged
+// to create a combined relevance score.
 func (so *SearchOptimizer) mergeResults(vectorResults, keywordResults []adapters.ChunkSearchResult) []adapters.ChunkSearchResult {
 	resultMap := make(map[string]*adapters.ChunkSearchResult)
 
@@ -265,6 +313,9 @@ func (so *SearchOptimizer) mergeResults(vectorResults, keywordResults []adapters
 }
 
 // applyHybridScoring calculates hybrid scores for all results.
+//
+// This method applies the configured scoring weights to combine multiple
+// ranking signals into a single relevance score.
 func (so *SearchOptimizer) applyHybridScoring(results []adapters.ChunkSearchResult, components searchComponents) []adapters.ChunkSearchResult {
 	if so.cfg.EnableParallelScoring {
 		return so.parallelHybridScoring(results, components)
@@ -278,6 +329,9 @@ func (so *SearchOptimizer) applyHybridScoring(results []adapters.ChunkSearchResu
 }
 
 // parallelHybridScoring applies hybrid scoring in parallel using WaitGroup.Go.
+//
+// This method leverages Go 1.23+ WaitGroup.Go for cleaner concurrent processing
+// of scoring operations, improving performance for large result sets.
 func (so *SearchOptimizer) parallelHybridScoring(results []adapters.ChunkSearchResult, components searchComponents) []adapters.ChunkSearchResult {
 	var wg sync.WaitGroup
 
@@ -293,6 +347,12 @@ func (so *SearchOptimizer) parallelHybridScoring(results []adapters.ChunkSearchR
 }
 
 // calculateHybridScore computes the hybrid score for a single result.
+//
+// The score combines multiple signals according to the configured weights:
+//   - Vector similarity: Semantic relevance
+//   - Keyword matching: Term presence
+//   - Phrase matching: Exact phrase matches
+//   - Content quality: Length and structure metrics
 func (so *SearchOptimizer) calculateHybridScore(result *adapters.ChunkSearchResult, components searchComponents) adapters.ChunkSearchResult {
 	// Initialize score components.
 	vectorScore := float64(result.Similarity)
@@ -319,7 +379,10 @@ func (so *SearchOptimizer) calculateHybridScore(result *adapters.ChunkSearchResu
 	return *result
 }
 
-// calculateKeywordScore calculates keyword matching score.
+// calculateKeywordScore calculates the keyword matching score.
+//
+// The score is based on both coverage (how many keywords match) and
+// frequency (how often they appear), with coverage weighted more heavily.
 func (so *SearchOptimizer) calculateKeywordScore(content string, keywords []string) float64 {
 	if len(keywords) == 0 {
 		return 0
@@ -345,7 +408,9 @@ func (so *SearchOptimizer) calculateKeywordScore(content string, keywords []stri
 	return (coverage * 0.7) + (frequency * 0.3)
 }
 
-// calculatePhraseScore calculates phrase matching score.
+// calculatePhraseScore calculates the phrase matching score.
+//
+// Returns the proportion of phrases that appear in the content.
 func (so *SearchOptimizer) calculatePhraseScore(content string, phrases []string) float64 {
 	if len(phrases) == 0 {
 		return 0
@@ -363,7 +428,12 @@ func (so *SearchOptimizer) calculatePhraseScore(content string, phrases []string
 	return float64(matchCount) / float64(len(phrases))
 }
 
-// calculateQualityScore evaluates content quality.
+// calculateQualityScore evaluates content quality based on multiple factors.
+//
+// Quality signals include:
+//   - Content length (optimal range: 100-1500 characters)
+//   - Structured content (presence of formatting)
+//   - Metadata quality indicators
 func (so *SearchOptimizer) calculateQualityScore(result *adapters.ChunkSearchResult) float64 {
 	score := 0.0
 
@@ -395,7 +465,10 @@ func (so *SearchOptimizer) calculateQualityScore(result *adapters.ChunkSearchRes
 	return math.Min(score, 1.0)
 }
 
-// rerankAndFilter performs final re-ranking and filtering.
+// rerankAndFilter performs final re-ranking and filtering of results.
+//
+// This method sorts results by hybrid score, applies minimum score
+// thresholds, limits the result count, and ensures diversity.
 func (so *SearchOptimizer) rerankAndFilter(results []adapters.ChunkSearchResult) []adapters.ChunkSearchResult {
 	// Sort by hybrid score.
 	sort.Slice(results, func(i, j int) bool {
@@ -428,7 +501,10 @@ func (so *SearchOptimizer) rerankAndFilter(results []adapters.ChunkSearchResult)
 	return filtered
 }
 
-// ensureDiversity ensures result diversity.
+// ensureDiversity ensures diversity in the final results.
+//
+// This method removes results that are too similar to already selected
+// results, preventing redundant information in the response.
 func (so *SearchOptimizer) ensureDiversity(results []adapters.ChunkSearchResult) []adapters.ChunkSearchResult {
 	if len(results) <= 2 {
 		return results
@@ -456,7 +532,10 @@ func (so *SearchOptimizer) ensureDiversity(results []adapters.ChunkSearchResult)
 	return diverse
 }
 
-// contentSimilarity calculates simple content similarity.
+// contentSimilarity calculates Jaccard similarity between two texts.
+//
+// This is a simple and fast similarity metric used for diversity filtering.
+// Returns a value between 0 (no similarity) and 1 (identical).
 func (so *SearchOptimizer) contentSimilarity(content1, content2 string) float64 {
 	// Simple Jaccard similarity for quick comparison.
 	words1 := strings.Fields(strings.ToLower(content1))
@@ -488,6 +567,11 @@ func (so *SearchOptimizer) contentSimilarity(content1, content2 string) float64 
 }
 
 // validate checks if the configuration is valid.
+//
+// Validation ensures:
+//   - All weights sum to 1.0 (within tolerance)
+//   - Individual weights are between 0 and 1
+//   - Similarity threshold is between 0 and 1
 func (c *Config) validate() error {
 	// Validate weights sum to 1.0.
 	totalWeight := c.VectorWeight + c.KeywordWeight + c.PhraseWeight + c.QualityWeight
@@ -507,6 +591,9 @@ func (c *Config) validate() error {
 }
 
 // isChinese checks if a string contains Chinese characters.
+//
+// This function checks for characters in the CJK Unified Ideographs range
+// (U+4E00 to U+9FFF), which covers common Chinese characters.
 func isChinese(str string) bool {
 	for _, r := range str {
 		if r >= 0x4e00 && r <= 0x9fff {
