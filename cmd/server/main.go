@@ -3,21 +3,13 @@ package main
 import (
 	"context"
 
-	"github.com/hsn0918/rag/internal/logger"
 	"github.com/hsn0918/rag/internal/server"
+	"github.com/hsn0918/rag/pkg/logger"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
 func main() {
-	if err := logger.Init(); err != nil {
-		panic("logger initialization failed: " + err.Error())
-	}
-	defer func() {
-		if syncErr := logger.Sync(); syncErr != nil {
-		}
-	}()
-
 	app := fx.New(
 		server.Module,
 		fx.NopLogger,

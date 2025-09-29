@@ -9,12 +9,13 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/adapters"
-	"github.com/hsn0918/rag/internal/clients/openai"
 	ragv1 "github.com/hsn0918/rag/internal/gen/rag/v1"
-	"github.com/hsn0918/rag/internal/logger"
-	"github.com/hsn0918/rag/internal/prompts"
-	"github.com/hsn0918/rag/internal/search"
-	"github.com/hsn0918/rag/internal/utils"
+	"github.com/hsn0918/rag/pkg/clients/openai"
+	pkgopenai "github.com/hsn0918/rag/pkg/clients/openai"
+	"github.com/hsn0918/rag/pkg/logger"
+	"github.com/hsn0918/rag/pkg/prompts"
+	"github.com/hsn0918/rag/pkg/search"
+	pkgutils "github.com/hsn0918/rag/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -363,7 +364,7 @@ func (s *RagServer) buildContextResponse(chunks []adapters.ChunkSearchResult, qu
 // This is a wrapper around utils.CleanAndFormatContent with a fixed
 // maximum length of 2000 bytes.
 func (s *RagServer) cleanAndFormatChunkContent(content string) string {
-	return utils.CleanAndFormatContent(content, 2000)
+	return pkgutils.CleanAndFormatContent(content, 2000)
 }
 
 // generateKeywords extracts keywords from the query using LLM.
@@ -387,7 +388,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				map[string]string{"query": query},
 			)
 			if err == nil {
-				messages := []openai.Message{
+				messages := []pkgopenai.Message{
 					{
 						Role:    "system",
 						Content: prompt.System,
@@ -401,11 +402,11 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 				if err != nil {
 					logger.Get().Error("LLM关键词提取失败", zap.Error(err))
-					return utils.ExtractBasicKeywords(query), nil
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				if len(resp.Choices) == 0 {
-					return utils.ExtractBasicKeywords(query), nil
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				logger.Get().Info("关键词 LLM", zap.Any("resp", resp))
@@ -427,7 +428,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				}
 
 				if len(keywords) == 0 {
-					return utils.ExtractBasicKeywords(query), nil
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				return keywords, nil
@@ -444,7 +445,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				map[string]string{"query": query},
 			)
 			if err == nil {
-				messages := []openai.Message{
+				messages := []pkgopenai.Message{
 					{
 						Role:    "system",
 						Content: prompt.System,
@@ -460,11 +461,11 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				if err != nil {
 					logger.Get().Error("LLM关键词提取失败", zap.Error(err))
 					// 降级为简单分词
-					return utils.ExtractBasicKeywords(query), nil
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				if len(resp.Choices) == 0 {
-					return utils.ExtractBasicKeywords(query), nil
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				logger.Get().Info("关键词 LLM", zap.Any("resp", resp))
@@ -488,7 +489,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				}
 
 				if len(keywords) == 0 {
-					return utils.ExtractBasicKeywords(query), nil
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				return keywords, nil
@@ -497,7 +498,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 	}
 
 	// Final fallback to basic keywords if all else fails
-	return utils.ExtractBasicKeywords(query), nil
+	return pkgutils.ExtractBasicKeywords(query), nil
 
 }
 
@@ -740,16 +741,16 @@ func (s *RagServer) generateBasicContextSummary(chunks []adapters.ChunkSearchRes
 // analyzeQueryType analyzes the semantic type of a query.
 //
 // This function delegates to utils.AnalyzeQueryType for the actual analysis.
-func (s *RagServer) analyzeQueryType(query string) utils.QueryType {
-	return utils.AnalyzeQueryType(query)
+func (s *RagServer) analyzeQueryType(query string) pkgutils.QueryType {
+	return pkgutils.AnalyzeQueryType(query)
 }
 
 // generateQueryTypeGuidance generates guidance text based on query type.
 //
 // This function delegates to utils.GetQueryTypeGuidance for the actual
 // guidance generation.
-func (s *RagServer) generateQueryTypeGuidance(queryType utils.QueryType) string {
-	return utils.GetQueryTypeGuidance(queryType)
+func (s *RagServer) generateQueryTypeGuidance(queryType pkgutils.QueryType) string {
+	return pkgutils.GetQueryTypeGuidance(queryType)
 }
 
 // generateQuerySpecificSummary generates a query-specific summary.
@@ -757,8 +758,8 @@ func (s *RagServer) generateQueryTypeGuidance(queryType utils.QueryType) string 
 // This function delegates to utils.GetQuerySpecificSummary for the actual
 // summary generation based on the analyzed query type.
 func (s *RagServer) generateQuerySpecificSummary(query string, _ []adapters.ChunkSearchResult) string {
-	queryType := utils.AnalyzeQueryType(query)
-	return utils.GetQuerySpecificSummary(queryType)
+	queryType := pkgutils.AnalyzeQueryType(query)
+	return pkgutils.GetQuerySpecificSummary(queryType)
 }
 
 // generateSmartResponse generates template-based fallback responses.

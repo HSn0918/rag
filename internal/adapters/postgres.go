@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hsn0918/rag/internal/logger"
+	"github.com/hsn0918/rag/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 	"go.uber.org/zap"
@@ -45,7 +45,7 @@ const (
 	insertDocumentTemplate = `INSERT INTO %s (id, title, minio_key, metadata) VALUES ($1, $2, $3, $4)`
 	insertChunkTemplate    = `INSERT INTO %s (document_id, chunk_index, content, embedding, metadata) VALUES ($1, $2, $3, $4, $5)`
 	searchChunksTemplate   = `
-		SELECT 
+		SELECT
 			c.id as chunk_id,
 			c.document_id,
 			c.content,
@@ -151,8 +151,8 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	logger.Get().Info("中文分词配置 'chinese_zh' 已准备就绪")
 
 	// 7. 根据维度生成表名
-	documentsTable := fmt.Sprintf("rag_documents_%dd", dimensions)
-	chunksTable := fmt.Sprintf("document_chunks_%dd", dimensions)
+	documentsTable := fmt.Sprintf("document_%dd", dimensions)
+	chunksTable := fmt.Sprintf("document_chunk_%dd", dimensions)
 
 	// 8. 创建文档表和文档块表
 	createDocumentsTable := fmt.Sprintf(createDocumentsTableTemplate, documentsTable)

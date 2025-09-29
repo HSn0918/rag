@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/hsn0918/rag/internal/clients/doc2x"
-	"github.com/hsn0918/rag/internal/logger"
+	pkgdoc2x "github.com/hsn0918/rag/pkg/clients/doc2x"
+	"github.com/hsn0918/rag/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -116,8 +116,8 @@ func (s *RagServer) processWithDoc2X(ctx context.Context, pdfData []byte, md5Has
 	// 检查Redis中的Doc2X响应缓存
 	logger.Get().Info("MinIO processed text cache miss, checking Redis cache", zap.String("md5", md5Hash))
 
-	var statusResp *doc2x.StatusResponse
-	cachedResp := &doc2x.StatusResponse{}
+	var statusResp *pkgdoc2x.StatusResponse
+	cachedResp := &pkgdoc2x.StatusResponse{}
 	err := s.Cache.GetDoc2XResponse(ctx, md5Hash, cachedResp)
 	if err == nil && cachedResp.Data != nil {
 		// Redis缓存命中，直接使用缓存的结果

@@ -12,9 +12,9 @@ import (
 	"connectrpc.com/connect"
 	"go.uber.org/zap"
 
-	"github.com/hsn0918/rag/internal/chunking"
 	ragv1 "github.com/hsn0918/rag/internal/gen/rag/v1"
-	"github.com/hsn0918/rag/internal/logger"
+	"github.com/hsn0918/rag/pkg/chunking"
+	"github.com/hsn0918/rag/pkg/logger"
 )
 
 var consecutiveNewlines = regexp.MustCompile(`\n{3,}`)
@@ -138,13 +138,13 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 	// Check if semantic chunking is enabled
 	useSemanticChunking := s.Config.Chunking.EnableSemantic
 
-	if useSemanticChunking && s.EmbeddingClient != nil {
+	if useSemanticChunking && s.Embedding != nil {
 		logger.Get().Info("Using semantic chunking")
 
 		semanticChunker, err := chunking.NewSemanticChunker(
 			chunkConfig.MaxChunkSize,
 			chunkConfig.MinChunkSize,
-			s.EmbeddingClient,
+			s.Embedding,
 			chunking.WithModel(s.Config.Services.Embedding.Model),
 			chunking.WithSimilarityThreshold(s.Config.Chunking.SimilarityThreshold),
 			chunking.WithParallelProcessing(true),

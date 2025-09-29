@@ -1,6 +1,6 @@
 services:
   postgres:
-    build: .
+    image: hsn0918/pgvector:latest
     container_name: rag_postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ragdb}

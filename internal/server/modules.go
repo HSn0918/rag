@@ -8,12 +8,16 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/hsn0918/rag/internal/adapters"
-	"github.com/hsn0918/rag/internal/clients/embedding"
-	"github.com/hsn0918/rag/internal/config"
 	"github.com/hsn0918/rag/internal/gen/rag/v1/ragv1connect"
-	"github.com/hsn0918/rag/internal/logger"
-	"github.com/hsn0918/rag/internal/middleware"
-	"github.com/hsn0918/rag/internal/redis"
+	pkgdoc2x "github.com/hsn0918/rag/pkg/clients/doc2x"
+	pkgembedding "github.com/hsn0918/rag/pkg/clients/embedding"
+	pkgopenai "github.com/hsn0918/rag/pkg/clients/openai"
+	pkgrerank "github.com/hsn0918/rag/pkg/clients/rerank"
+	"github.com/hsn0918/rag/pkg/config"
+	"github.com/hsn0918/rag/pkg/logger"
+	"github.com/hsn0918/rag/pkg/middleware"
+	"github.com/hsn0918/rag/pkg/redis"
+	"github.com/hsn0918/rag/pkg/storage"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
@@ -22,33 +26,75 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+// Module 是主要的FX依赖注入模块
 var Module = fx.Options(
-	fx.Provide(
-		NewConfig,
-		NewLogger,
-		NewDatabase,
-		NewRedisClient,
-		NewCacheService,
-		NewClients,
-		NewRagServer,
-		NewHTTPServer,
-	),
-	fx.Invoke(StartServer),
+	// 基础设施模块
+	InfrastructureModule,
+	// 客户端模块
+	ClientsModule,
+	// 服务模块
+	ServicesModule,
+	// HTTP服务器模块
+	HTTPServerModule,
+	// 启动器
+	fx.Invoke(StartHTTPServer),
 )
 
-func NewConfig() (*config.Config, error) {
+// InfrastructureModule 基础设施模块 - 配置、日志、数据库、缓存
+var InfrastructureModule = fx.Module("infrastructure",
+	fx.Provide(
+		NewAppConfig,
+		NewAppLogger,
+		NewVectorDatabase,
+		NewRedisConnection,
+		NewCacheService,
+	),
+)
+
+// ClientsModule 客户端模块 - 外部服务客户端
+var ClientsModule = fx.Module("clients",
+	fx.Provide(
+		NewExternalClients,
+	),
+)
+
+// ServicesModule 服务模块 - 业务逻辑服务
+var ServicesModule = fx.Module("services",
+	fx.Provide(
+		NewRagService,
+	),
+)
+
+// HTTPServerModule HTTP服务器模块
+var HTTPServerModule = fx.Module("http_server",
+	fx.Provide(
+		NewHTTPHandler,
+	),
+)
+
+// ================================
+// 基础设施构造函数
+// ================================
+
+// NewAppConfig 创建应用配置
+func NewAppConfig() (*config.Config, error) {
 	cfg, err := config.LoadConfig(".")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return cfg, nil
 }
 
-func NewLogger() (*zap.Logger, error) {
-	return zap.NewProduction()
+// NewAppLogger 创建应用日志器
+func NewAppLogger() (*zap.Logger, error) {
+	if err := logger.Init(); err != nil {
+		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	return logger.Get(), nil
 }
 
-func NewDatabase(cfg *config.Config) (adapters.VectorDB, error) {
+// NewVectorDatabase 创建向量数据库连接
+func NewVectorDatabase(cfg *config.Config) (adapters.VectorDB, error) {
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		cfg.Database.User,
 		cfg.Database.Password,
@@ -58,31 +104,114 @@ func NewDatabase(cfg *config.Config) (adapters.VectorDB, error) {
 	)
 
 	embeddingModel := cfg.Services.Embedding.Model
-	dimensions := embedding.GetDefaultDimensions(embeddingModel)
-	logger.Get().Info("使用embedding模型", zap.String("model", embeddingModel), zap.Int("dimensions", dimensions))
+	dimensions := pkgembedding.GetDefaultDimensions(embeddingModel)
+	logger.Get().Info("初始化向量数据库",
+		zap.String("model", embeddingModel),
+		zap.Int("dimensions", dimensions))
 
-	return adapters.NewPostgresVectorDB(dsn, dimensions)
+	db, err := adapters.NewPostgresVectorDB(dsn, dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vector database: %w", err)
+	}
+	return db, nil
 }
 
-func NewRedisClient(cfg *config.Config) (*redis.Client, error) {
-	return redis.NewClientFromConfig(*cfg)
+// NewRedisConnection 创建Redis连接
+func NewRedisConnection(cfg *config.Config) (*redis.Client, error) {
+	client, err := redis.NewClientFromConfig(*cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create redis client: %w", err)
+	}
+	return client, nil
 }
 
+// NewCacheService 创建缓存服务
 func NewCacheService(redisClient *redis.Client) *redis.CacheService {
 	return redis.NewCacheService(redisClient)
 }
 
-func NewRagServer(db adapters.VectorDB, cache *redis.CacheService, clients *Clients, cfg *config.Config) (*RagServer, error) {
-	return NewRagServerWithClients(db, cache, clients, *cfg)
+// ================================
+// 客户端构造函数
+// ================================
+
+// NewClients 根据配置创建所有客户端 (向后兼容函数)
+func NewClients(cfg *config.Config) (*ExternalClients, error) {
+	// 创建 MinIO 客户端
+	minioClient, err := storage.NewMinIOClient(storage.MinIOConfig{
+		Endpoint:        cfg.MinIO.Endpoint,
+		AccessKeyID:     cfg.MinIO.AccessKeyID,
+		SecretAccessKey: cfg.MinIO.SecretAccessKey,
+		BucketName:      cfg.MinIO.BucketName,
+		UseSSL:          cfg.MinIO.UseSSL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
+	}
+
+	return &ExternalClients{
+		Doc2X:     pkgdoc2x.NewClient(cfg.Services.Doc2X),
+		Embedding: pkgembedding.NewClient(cfg.Services.Embedding.ServiceConfig),
+		LLM:       pkgopenai.NewClient(cfg.Services.LLM),
+		Reranker:  pkgrerank.NewClient(cfg.Services.Reranker),
+		Storage:   minioClient,
+	}, nil
 }
 
-func NewHTTPServer(ragServer *RagServer, cfg *config.Config) *http.Server {
+// NewExternalClients 创建所有外部服务客户端
+func NewExternalClients(cfg *config.Config) (*ExternalClients, error) {
+	return NewClients(cfg)
+}
+
+// ================================
+// 服务构造函数
+// ================================
+
+// NewRagService 创建RAG服务
+func NewRagService(
+	db adapters.VectorDB,
+	cache *redis.CacheService,
+	clients *ExternalClients,
+	cfg *config.Config,
+) (*RagServer, error) {
+	// 创建RAG服务实例
+	server := &RagServer{
+		DB:        db,
+		Cache:     cache,
+		Storage:   clients.Storage,
+		Doc2X:     clients.Doc2X,
+		Embedding: clients.Embedding,
+		LLM:       clients.LLM,
+		Reranker:  clients.Reranker,
+		Config:    cfg,
+	}
+
+	// 初始化搜索优化器
+	searchOptimizer, err := NewSearchOptimizer(
+		server,
+		20, // 初始候选数
+		5,  // 最终结果数
+		WithMinSimilarity(0.25),
+		WithParallelScoring(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search optimizer: %w", err)
+	}
+
+	server.SearchOptimizer = searchOptimizer
+	return server, nil
+}
+
+// ================================
+// HTTP服务器构造函数
+// ================================
+
+// NewHTTPHandler 创建HTTP处理器
+func NewHTTPHandler(ragService *RagServer, cfg *config.Config) *http.Server {
 	mux := http.NewServeMux()
 
-	// 配置Connect RPC选项
-	opts := []connect.HandlerOption{
-		// 配置JSON编码为下划线格式
-		connect.WithCodec(&protoJSONCodec{
+	// Connect RPC选项配置
+	connectOpts := []connect.HandlerOption{
+		connect.WithCodec(&ProtoJSONCodec{
 			marshaler: protojson.MarshalOptions{
 				UseProtoNames:   true, // 使用proto字段名(下划线格式)
 				EmitUnpopulated: true, // 输出空值字段
@@ -91,63 +220,72 @@ func NewHTTPServer(ragServer *RagServer, cfg *config.Config) *http.Server {
 				DiscardUnknown: true, // 忽略未知字段
 			},
 		}),
-		// 添加验证中间件
 		connect.WithInterceptors(middleware.HTTPValidator()),
 	}
 
-	path, handler := ragv1connect.NewRagServiceHandler(ragServer, opts...)
+	// 注册RPC服务处理器
+	path, handler := ragv1connect.NewRagServiceHandler(ragService, connectOpts...)
 	mux.Handle(path, handler)
 
-	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
-	logger.Get().Info("服务正在启动", zap.String("address", addr))
+	serverAddr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
+	logger.Get().Info("HTTP服务器配置完成", zap.String("address", serverAddr))
 
 	return &http.Server{
-		Addr:    addr,
+		Addr:    serverAddr,
 		Handler: h2c.NewHandler(mux, &http2.Server{}),
 	}
 }
 
-type protoJSONCodec struct {
-	marshaler   protojson.MarshalOptions
-	unmarshaler protojson.UnmarshalOptions
-}
+// ================================
+// 生命周期管理
+// ================================
 
-func (c *protoJSONCodec) Name() string {
-	return "json"
-}
-
-func (c *protoJSONCodec) Marshal(v any) ([]byte, error) {
-	if msg, ok := v.(interface{ ProtoReflect() protoreflect.Message }); ok {
-		return c.marshaler.Marshal(msg.ProtoReflect().Interface())
-	}
-	return nil, fmt.Errorf("cannot marshal %T", v)
-}
-
-func (c *protoJSONCodec) Unmarshal(data []byte, v any) error {
-	if msg, ok := v.(interface{ ProtoReflect() protoreflect.Message }); ok {
-		return c.unmarshaler.Unmarshal(data, msg.ProtoReflect().Interface())
-	}
-	return fmt.Errorf("cannot unmarshal to %T", v)
-}
-
-func StartServer(httpServer *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner) {
+// StartHTTPServer 启动HTTP服务器
+func StartHTTPServer(httpServer *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner) {
 	lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			logger.Get().Info("HTTP server starting", zap.String("addr", httpServer.Addr))
+			logger.Get().Info("启动HTTP服务器", zap.String("addr", httpServer.Addr))
 			go func() {
 				if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logger.Get().Error("HTTP server failed", zap.Error(err))
-					err := shutdowner.Shutdown()
-					if err != nil {
-						return
+					logger.Get().Error("HTTP服务器启动失败", zap.Error(err))
+					if shutdownErr := shutdowner.Shutdown(); shutdownErr != nil {
+						logger.Get().Error("应用程序关闭失败", zap.Error(shutdownErr))
 					}
 				}
 			}()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			logger.Get().Info("HTTP server stopping")
+			logger.Get().Info("停止HTTP服务器")
 			return httpServer.Shutdown(ctx)
 		},
 	})
+}
+
+// ================================
+// 辅助类型和函数
+// ================================
+
+// ProtoJSONCodec Connect RPC的JSON编解码器
+type ProtoJSONCodec struct {
+	marshaler   protojson.MarshalOptions
+	unmarshaler protojson.UnmarshalOptions
+}
+
+func (c *ProtoJSONCodec) Name() string {
+	return "json"
+}
+
+func (c *ProtoJSONCodec) Marshal(v any) ([]byte, error) {
+	if msg, ok := v.(interface{ ProtoReflect() protoreflect.Message }); ok {
+		return c.marshaler.Marshal(msg.ProtoReflect().Interface())
+	}
+	return nil, fmt.Errorf("cannot marshal %T", v)
+}
+
+func (c *ProtoJSONCodec) Unmarshal(data []byte, v any) error {
+	if msg, ok := v.(interface{ ProtoReflect() protoreflect.Message }); ok {
+		return c.unmarshaler.Unmarshal(data, msg.ProtoReflect().Interface())
+	}
+	return fmt.Errorf("cannot unmarshal to %T", v)
 }
