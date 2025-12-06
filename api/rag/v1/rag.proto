@@ -15,6 +15,10 @@ service RagService {
   rpc UploadPdf(UploadPdfRequest) returns (UploadPdfResponse);
   // 根据查询获取相关上下文
   rpc GetContext(GetContextRequest) returns (GetContextResponse);
+  // 列出已上传文档
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse);
+  // 删除文档（同时删除关联分块）
+  rpc DeleteDocument(DeleteDocumentRequest) returns (DeleteDocumentResponse);
 }
 
 // 预上传请求
@@ -71,5 +75,50 @@ message GetContextRequest {
 message GetContextResponse {
   // 检索到的相关上下文内容
   string context = 1;
+  // 关键词
+  repeated string keywords = 2;
 }
 
+// ListDocumentsRequest 文档列表请求（游标分页）
+message ListDocumentsRequest {
+  // 页面大小，默认 50，最大 200
+  int32 page_size = 1;
+  // 游标（上一页返回的 next_cursor）
+  string cursor = 2;
+}
+
+// Document 文档视图
+message Document {
+  // 文档 ID
+  string id = 1;
+  // 文档标题
+  string title = 2;
+  // 存储键
+  string minio_key = 3;
+  // 元数据 JSON
+  string metadata_json = 4;
+  // 创建时间（RFC3339）
+  string created_at = 5;
+}
+
+// ListDocumentsResponse 文档列表响应
+message ListDocumentsResponse {
+  // 文档
+  repeated Document documents = 1;
+  // 下一页游标，如为空表示没有更多
+  string next_cursor = 2;
+}
+
+// DeleteDocumentRequest 删除文档请求
+message DeleteDocumentRequest {
+  // 文档 ID
+  string document_id = 1 [(buf.validate.field).string = {min_len: 1}];
+}
+
+// DeleteDocumentResponse 删除文档响应
+message DeleteDocumentResponse {
+  // 删除是否成功
+  bool success = 1;
+  // 结果信息
+  string message = 2;
+}

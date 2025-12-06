@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { GetContextRequest, GetContextResponse, PreUploadRequest, PreUploadResponse, UploadPdfRequest, UploadPdfResponse } from "./rag_pb";
+import { DeleteDocumentRequest, DeleteDocumentResponse, GetContextRequest, GetContextResponse, ListDocumentsRequest, ListDocumentsResponse, PreUploadRequest, PreUploadResponse, UploadPdfRequest, UploadPdfResponse } from "./rag_pb";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -45,6 +45,28 @@ export const RagService = {
       name: "GetContext",
       I: GetContextRequest,
       O: GetContextResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * 列出已上传文档
+     *
+     * @generated from rpc rag.v1.RagService.ListDocuments
+     */
+    listDocuments: {
+      name: "ListDocuments",
+      I: ListDocumentsRequest,
+      O: ListDocumentsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * 删除文档（同时删除关联分块）
+     *
+     * @generated from rpc rag.v1.RagService.DeleteDocument
+     */
+    deleteDocument: {
+      name: "DeleteDocument",
+      I: DeleteDocumentRequest,
+      O: DeleteDocumentResponse,
       kind: MethodKind.Unary,
     },
   }

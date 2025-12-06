@@ -9,6 +9,13 @@ import { QueryInput } from "@/components/rag/query-input"
 import { FileText, Database, BrainCircuit, Sparkles } from "lucide-react"
 import { RagService } from "@/gen/rag/v1/rag_connect"
 import { RagResponseDisplay } from "@/components/rag/rag-response-display"
+import { KeywordsVisualizer } from "@/components/rag/keywords-visualizer"
+import dynamic from "next/dynamic"
+
+const DocumentList = dynamic(() => import("@/components/rag/document-list").then(mod => mod.DocumentList), {
+    ssr: false,
+    loading: () => <p>Loading list...</p>
+})
 
 type ProgressUpdater = (value: number) => void
 
@@ -49,6 +56,14 @@ export default function Home() {
     const [isUploading, setIsUploading] = React.useState(false)
     const [uploadSuccess, setUploadSuccess] = React.useState(false)
     const [queryResult, setQueryResult] = React.useState<string | null>(null)
+    const [resultKeywords, setResultKeywords] = React.useState<string[]>([])
+    const [documentRefresh, setDocumentRefresh] = React.useState(0)
+    const [optimisticDoc, setOptimisticDoc] = React.useState<{
+        id: string
+        title: string
+        createdAt: string
+        minioKey: string
+    } | null>(null)
 
     const handleUpload = async (file: File) => {
         setIsUploading(true)
@@ -71,10 +86,18 @@ export default function Home() {
             })
 
             // 3) Notify backend to process the uploaded file
-            await client.uploadPdf({ fileKey: preUpload.fileKey, filename: file.name })
+            const uploadResp = await client.uploadPdf({ fileKey: preUpload.fileKey, filename: file.name })
 
             setUploadProgress(100)
             setUploadSuccess(true)
+            // show immediately in list
+            setOptimisticDoc({
+                id: uploadResp.documentId || preUpload.fileKey,
+                title: file.name,
+                createdAt: new Date().toISOString(),
+                minioKey: preUpload.fileKey,
+            })
+            setDocumentRefresh((v) => v + 1) // trigger document list refresh
         } catch (error) {
             console.error(error)
             setUploadProgress(0)
@@ -100,14 +123,15 @@ export default function Home() {
             // Visualize "working" state
             setPipelineStep("search")
 
-            // Call the unified RAG endpoint with 5 minute timeout
+            // Call the unified RAG endpoint with 1 minute timeout
             const res = await client.getContext({ query }, {
-                timeoutMs: 300000 // 5 minutes
+                timeoutMs: 60000 // 1 minute
             })
 
             // Simulate steps for visual feedback (optional, or just jump to complete)
             setPipelineStep("complete")
             setQueryResult(res.context)
+            setResultKeywords(res.keywords)
 
         } catch (error) {
             console.error("Pipeline failed, showing demo result", error)
@@ -135,6 +159,7 @@ export default function Home() {
         }
         setPipelineStep("complete")
         setQueryResult("这是一个模拟的总结。RAG (检索增强生成) 通过检索相关文档，进行重排序，然后总结上下文来准确回答用户的查询。")
+        setResultKeywords(["检索增强生成", "上下文", "大模型", "文档检索", "人工智能", "自然语言处理", "向量数据库"])
     }
 
     return (
@@ -183,6 +208,13 @@ export default function Home() {
                         <QueryInput onSearch={handleSearch} isLoading={pipelineStep !== "idle" && pipelineStep !== "complete"} />
 
                         <PipelineVisualizer currentStep={pipelineStep} className="max-w-5xl mx-auto shadow-2xl border-gray-200 dark:border-gray-800" />
+
+                        {/* Keywords Visualization */}
+                        {(resultKeywords.length > 0 || keywords.length > 0) && (
+                            <div className="w-full max-w-5xl mx-auto animate-in fade-in duration-500">
+                                <KeywordsVisualizer keywords={resultKeywords.length > 0 ? resultKeywords : keywords} />
+                            </div>
+                        )}
 
                         {/* Detailed Steps Visualization */}
                         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -268,6 +300,11 @@ export default function Home() {
                             </div>
                         </div>
                     )}
+                </section>
+
+                {/* Document List Section */}
+                <section className="animate-in slide-in-from-bottom-10 fade-in duration-700 delay-300 max-w-5xl mx-auto w-full pt-12">
+                    <DocumentList refreshKey={documentRefresh} optimisticDoc={optimisticDoc ?? undefined} />
                 </section>
             </div>
         </main>

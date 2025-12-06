@@ -1,10 +1,6 @@
 import * as React from "react"
+import * as d3 from "d3"
 import { cn } from "@/lib/utils"
-// We import d3 just to ensure types/funcs if we had complex stuff, but for this simple viz we might use pure SVG or simple divs + CSS animations for better React integration, OR use D3 if really needed. 
-// Given the prompt asked for D3, let's pretend to use it or actually use it. 
-// However, React + D3 is often best handled by React controlling DOM and D3 calculating math. 
-// For a step visualizer, CSS grid/flex + SVG lines is often cleaner. 
-// Let's implement a nice looking SVG based one.
 
 export type PipelineStep = "idle" | "keywords" | "embedding" | "search" | "rerank" | "summary" | "complete"
 
@@ -22,71 +18,129 @@ const steps = [
 ]
 
 export function PipelineVisualizer({ currentStep, className }: PipelineVisualizerProps) {
+    const svgRef = React.useRef<SVGSVGElement>(null)
 
-    const getStepStatus = (stepId: string) => {
-        if (currentStep === "idle") return "idle"
-        if (currentStep === "complete") return "complete"
+    React.useEffect(() => {
+        if (!svgRef.current) return
 
-        const stepOrder = ["keywords", "embedding", "search", "rerank", "summary"]
-        const currentIndex = stepOrder.indexOf(currentStep)
-        const stepIndex = stepOrder.indexOf(stepId)
+        const width = 800
+        const height = 120
+        const margin = { top: 40, right: 40, bottom: 40, left: 40 }
+        const innerWidth = width - margin.left - margin.right
 
-        if (stepIndex < currentIndex) return "complete"
-        if (stepIndex === currentIndex) return "active"
-        return "idle"
-    }
+        const svg = d3.select(svgRef.current)
+        svg.selectAll("*").remove() // Clear previous
+
+        const g = svg.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`)
+
+        // Scale for x-axis
+        const xScale = d3.scalePoint()
+            .domain(steps.map(s => s.id))
+            .range([0, innerWidth])
+            .padding(0.5)
+
+        // Draw connecting line background
+        g.append("line")
+            .attr("x1", 0)
+            .attr("y1", 0)
+            .attr("x2", innerWidth)
+            .attr("y2", 0)
+            .attr("stroke", "#e5e7eb")
+            .attr("stroke-width", 4)
+            .attr("class", "dark:stroke-gray-800")
+
+        // Determine progress
+        let activeIndex = -1
+        if (currentStep === "complete") activeIndex = steps.length
+        else if (currentStep !== "idle") {
+            activeIndex = steps.findIndex(s => s.id === currentStep)
+        }
+
+        // Animated progress line
+        if (activeIndex >= 0) {
+            const progressWidth = activeIndex === steps.length
+                ? innerWidth
+                : (xScale(steps[activeIndex].id) || 0)
+
+            g.append("line")
+                .attr("x1", 0)
+                .attr("y1", 0)
+                .attr("x2", 0) // Start at 0
+                .attr("y2", 0)
+                .attr("stroke", "#6366f1") // Indigo-500
+                .attr("stroke-width", 4)
+                .transition()
+                .duration(800)
+                .ease(d3.easeCubicOut)
+                .attr("x2", progressWidth)
+        }
+
+        // Draw Nodes
+        const nodes = g.selectAll(".node")
+            .data(steps)
+            .enter()
+            .append("g")
+            .attr("class", "node cursor-default")
+            .attr("transform", d => `translate(${xScale(d.id)}, 0)`)
+
+        // Node Circle
+        nodes.append("circle")
+            .attr("r", 24)
+            .attr("fill", (d, i) => {
+                if (i < activeIndex) return "#6366f1" // Complete
+                if (i === activeIndex) return "#ffffff" // Active
+                return "#f3f4f6" // Inactive
+            })
+            .attr("stroke", (d, i) => {
+                if (i <= activeIndex) return "#6366f1"
+                return "#e5e7eb"
+            })
+            .attr("stroke-width", 3)
+            .attr("class", (d, i) => {
+                const base = "transition-colors duration-300 "
+                if (i === activeIndex) return base + "stroke-indigo-500 animate-pulse"
+                if (i < activeIndex) return base + "fill-indigo-500 stroke-indigo-500"
+                return base + "fill-gray-100 stroke-gray-200 dark:fill-gray-800 dark:stroke-gray-700"
+            })
+
+        // Icon Text
+        nodes.append("text")
+            .text(d => d.icon)
+            .attr("dy", "0.35em")
+            .attr("text-anchor", "middle")
+            .attr("font-size", "14px")
+            .attr("fill", (d, i) => {
+                if (i < activeIndex) return "#ffffff"
+                return "#6b7280"
+            })
+
+        // Labels
+        nodes.append("text")
+            .text(d => d.label)
+            .attr("y", 40)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "12px")
+            .attr("font-weight", (d, i) => i === activeIndex ? "bold" : "normal")
+            .attr("fill", (d, i) => {
+                if (i === activeIndex) return "#4f46e5"
+                if (i < activeIndex) return "#111827"
+                return "#9ca3af"
+            })
+            .attr("class", "dark:fill-gray-300")
+
+    }, [currentStep])
 
     return (
         <div className={cn("w-full bg-white dark:bg-gray-900 rounded-3xl p-8 overflow-hidden", className)}>
-            <div className="relative">
-                {/* Connecting Line */}
-                <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 dark:bg-gray-800 -translate-y-1/2 rounded-full" />
-                <div
-                    className="absolute top-1/2 left-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 -translate-y-1/2 rounded-full transition-all duration-700 ease-in-out"
-                    style={{
-                        width: currentStep === 'idle' ? '0%' :
-                            currentStep === 'complete' ? '100%' :
-                                `${(steps.findIndex(s => s.id === currentStep) / (steps.length - 1)) * 100}%`
-                    }}
+            <div className="w-full overflow-x-auto flex justify-center">
+                <svg
+                    ref={svgRef}
+                    viewBox="0 0 800 120"
+                    width="100%"
+                    height={120}
+                    className="max-w-4xl"
                 />
-
-                <div className="relative flex justify-between">
-                    {steps.map((step) => {
-                        const status = getStepStatus(step.id)
-                        return (
-                            <div key={step.id} className="flex flex-col items-center gap-3 relative z-10">
-                                <div
-                                    className={cn(
-                                        "w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-sm border-4 transition-all duration-500",
-                                        status === "active" ? "bg-white dark:bg-gray-900 border-indigo-500 scale-110 text-indigo-500 shadow-indigo-200 dark:shadow-indigo-900/20" :
-                                            status === "complete" ? "bg-indigo-500 border-indigo-500 text-white scale-100" :
-                                                "bg-gray-50 dark:bg-gray-800 border-gray-100 dark:border-gray-800 text-gray-300 dark:text-gray-600"
-                                    )}
-                                >
-                                    {status === "complete" ? (
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    ) : (
-                                        <span>{step.icon}</span>
-                                    )}
-                                </div>
-                                <span className={cn(
-                                    "text-sm font-medium transition-colors duration-300 absolute -bottom-8 whitespace-nowrap",
-                                    status === "active" ? "text-indigo-600 dark:text-indigo-400" :
-                                        status === "complete" ? "text-gray-900 dark:text-gray-100" :
-                                            "text-gray-400 dark:text-gray-600"
-                                )}>
-                                    {step.label}
-                                </span>
-
-                                {status === "active" && (
-                                    <div className="absolute -top-2 -right-2 w-3 h-3 bg-indigo-500 rounded-full animate-ping" />
-                                )}
-                            </div>
-                        )
-                    })}
-                </div>
             </div>
         </div>
     )

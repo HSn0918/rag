@@ -16,16 +16,19 @@ export function UploadZone({ onUpload, isUploading, progress, success }: UploadZ
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault()
+        e.stopPropagation()
         setIsDragging(true)
     }
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault()
+        e.stopPropagation()
         setIsDragging(false)
     }
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault()
+        e.stopPropagation()
         setIsDragging(false)
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             validateAndUpload(e.dataTransfer.files[0])
@@ -39,10 +42,13 @@ export function UploadZone({ onUpload, isUploading, progress, success }: UploadZ
     }
 
     const validateAndUpload = (file: File) => {
-        if (file.type === "application/pdf") {
+        const isPdfType = file.type === "application/pdf"
+        const isPdfExt = file.name.toLowerCase().endsWith(".pdf")
+
+        if (isPdfType || isPdfExt) {
             onUpload(file)
         } else {
-            alert("Please upload a PDF file")
+            alert("请上传 PDF 文件")
         }
     }
 
@@ -73,13 +79,13 @@ export function UploadZone({ onUpload, isUploading, progress, success }: UploadZ
                     <div className="p-4 bg-green-100 dark:bg-green-900/40 rounded-full">
                         <CheckCircle className="w-10 h-10" />
                     </div>
-                    <p className="text-lg font-semibold">Ready to process!</p>
+                    <p className="text-lg font-semibold">准备就绪!</p>
                 </div>
             ) : isUploading ? (
                 <div className="w-full max-w-xs space-y-4 animate-in fade-in zoom-in-95">
                     <div className="flex flex-col items-center gap-2">
                         <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                        <p className="text-sm font-medium text-muted-foreground">Analysing document...</p>
+                        <p className="text-sm font-medium text-muted-foreground">正在分析文档...</p>
                     </div>
                     <Progress value={progress} className="h-2" />
                 </div>
@@ -90,10 +96,10 @@ export function UploadZone({ onUpload, isUploading, progress, success }: UploadZ
                     </div>
                     <div className="space-y-1">
                         <h3 className="text-xl font-semibold tracking-tight">
-                            Drop your PDF here
+                            将 PDF 文件拖拽到此处
                         </h3>
                         <p className="text-sm text-muted-foreground">
-                            or click to browse
+                            或点击上传
                         </p>
                     </div>
                 </div>

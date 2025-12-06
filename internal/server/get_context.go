@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/hsn0918/rag/pkg/prompts"
 	"github.com/hsn0918/rag/pkg/search"
 	pkgutils "github.com/hsn0918/rag/pkg/utils"
-	"log/slog"
 )
 
 type contextStages struct {
@@ -141,7 +141,8 @@ func (s *RagServer) GetContext(
 	)
 
 	return connect.NewResponse(&ragv1.GetContextResponse{
-		Context: contextContent,
+		Context:  contextContent,
+		Keywords: stage.keywords,
 	}), nil
 }
 

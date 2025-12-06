@@ -264,6 +264,13 @@ export class GetContextResponse extends Message<GetContextResponse> {
    */
   context = "";
 
+  /**
+   * 关键词
+   *
+   * @generated from field: repeated string keywords = 2;
+   */
+  keywords: string[] = [];
+
   constructor(data?: PartialMessage<GetContextResponse>) {
     super();
     proto3.util.initPartial(data, this);
@@ -273,6 +280,7 @@ export class GetContextResponse extends Message<GetContextResponse> {
   static readonly typeName = "rag.v1.GetContextResponse";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "context", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "keywords", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetContextResponse {
@@ -289,6 +297,267 @@ export class GetContextResponse extends Message<GetContextResponse> {
 
   static equals(a: GetContextResponse | PlainMessage<GetContextResponse> | undefined, b: GetContextResponse | PlainMessage<GetContextResponse> | undefined): boolean {
     return proto3.util.equals(GetContextResponse, a, b);
+  }
+}
+
+/**
+ * ListDocumentsRequest 文档列表请求（游标分页）
+ *
+ * @generated from message rag.v1.ListDocumentsRequest
+ */
+export class ListDocumentsRequest extends Message<ListDocumentsRequest> {
+  /**
+   * 页面大小，默认 50，最大 200
+   *
+   * @generated from field: int32 page_size = 1;
+   */
+  pageSize = 0;
+
+  /**
+   * 游标（上一页返回的 next_cursor）
+   *
+   * @generated from field: string cursor = 2;
+   */
+  cursor = "";
+
+  constructor(data?: PartialMessage<ListDocumentsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "rag.v1.ListDocumentsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "page_size", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 2, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListDocumentsRequest {
+    return new ListDocumentsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListDocumentsRequest {
+    return new ListDocumentsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListDocumentsRequest {
+    return new ListDocumentsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListDocumentsRequest | PlainMessage<ListDocumentsRequest> | undefined, b: ListDocumentsRequest | PlainMessage<ListDocumentsRequest> | undefined): boolean {
+    return proto3.util.equals(ListDocumentsRequest, a, b);
+  }
+}
+
+/**
+ * Document 文档视图
+ *
+ * @generated from message rag.v1.Document
+ */
+export class Document extends Message<Document> {
+  /**
+   * 文档 ID
+   *
+   * @generated from field: string id = 1;
+   */
+  id = "";
+
+  /**
+   * 文档标题
+   *
+   * @generated from field: string title = 2;
+   */
+  title = "";
+
+  /**
+   * 存储键
+   *
+   * @generated from field: string minio_key = 3;
+   */
+  minioKey = "";
+
+  /**
+   * 元数据 JSON
+   *
+   * @generated from field: string metadata_json = 4;
+   */
+  metadataJson = "";
+
+  /**
+   * 创建时间（RFC3339）
+   *
+   * @generated from field: string created_at = 5;
+   */
+  createdAt = "";
+
+  constructor(data?: PartialMessage<Document>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "rag.v1.Document";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "title", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "minio_key", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "metadata_json", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "created_at", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Document {
+    return new Document().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Document {
+    return new Document().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Document {
+    return new Document().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Document | PlainMessage<Document> | undefined, b: Document | PlainMessage<Document> | undefined): boolean {
+    return proto3.util.equals(Document, a, b);
+  }
+}
+
+/**
+ * ListDocumentsResponse 文档列表响应
+ *
+ * @generated from message rag.v1.ListDocumentsResponse
+ */
+export class ListDocumentsResponse extends Message<ListDocumentsResponse> {
+  /**
+   * 文档
+   *
+   * @generated from field: repeated rag.v1.Document documents = 1;
+   */
+  documents: Document[] = [];
+
+  /**
+   * 下一页游标，如为空表示没有更多
+   *
+   * @generated from field: string next_cursor = 2;
+   */
+  nextCursor = "";
+
+  constructor(data?: PartialMessage<ListDocumentsResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "rag.v1.ListDocumentsResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "documents", kind: "message", T: Document, repeated: true },
+    { no: 2, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListDocumentsResponse {
+    return new ListDocumentsResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListDocumentsResponse {
+    return new ListDocumentsResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListDocumentsResponse {
+    return new ListDocumentsResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListDocumentsResponse | PlainMessage<ListDocumentsResponse> | undefined, b: ListDocumentsResponse | PlainMessage<ListDocumentsResponse> | undefined): boolean {
+    return proto3.util.equals(ListDocumentsResponse, a, b);
+  }
+}
+
+/**
+ * DeleteDocumentRequest 删除文档请求
+ *
+ * @generated from message rag.v1.DeleteDocumentRequest
+ */
+export class DeleteDocumentRequest extends Message<DeleteDocumentRequest> {
+  /**
+   * 文档 ID
+   *
+   * @generated from field: string document_id = 1;
+   */
+  documentId = "";
+
+  constructor(data?: PartialMessage<DeleteDocumentRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "rag.v1.DeleteDocumentRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "document_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DeleteDocumentRequest {
+    return new DeleteDocumentRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DeleteDocumentRequest {
+    return new DeleteDocumentRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DeleteDocumentRequest {
+    return new DeleteDocumentRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: DeleteDocumentRequest | PlainMessage<DeleteDocumentRequest> | undefined, b: DeleteDocumentRequest | PlainMessage<DeleteDocumentRequest> | undefined): boolean {
+    return proto3.util.equals(DeleteDocumentRequest, a, b);
+  }
+}
+
+/**
+ * DeleteDocumentResponse 删除文档响应
+ *
+ * @generated from message rag.v1.DeleteDocumentResponse
+ */
+export class DeleteDocumentResponse extends Message<DeleteDocumentResponse> {
+  /**
+   * 删除是否成功
+   *
+   * @generated from field: bool success = 1;
+   */
+  success = false;
+
+  /**
+   * 结果信息
+   *
+   * @generated from field: string message = 2;
+   */
+  message = "";
+
+  constructor(data?: PartialMessage<DeleteDocumentResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "rag.v1.DeleteDocumentResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "success", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DeleteDocumentResponse {
+    return new DeleteDocumentResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DeleteDocumentResponse {
+    return new DeleteDocumentResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DeleteDocumentResponse {
+    return new DeleteDocumentResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: DeleteDocumentResponse | PlainMessage<DeleteDocumentResponse> | undefined, b: DeleteDocumentResponse | PlainMessage<DeleteDocumentResponse> | undefined): boolean {
+    return proto3.util.equals(DeleteDocumentResponse, a, b);
   }
 }
 

@@ -2,7 +2,9 @@ package adapters
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -66,11 +68,30 @@ type ChunkSearchResult struct {
 	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// DocumentRecord 表示数据库中的文档行
+type DocumentRecord struct {
+	ID        string                 `json:"id"`
+	Title     string                 `json:"title"`
+	MinioKey  string                 `json:"minio_key"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt time.Time              `json:"created_at"`
+}
+
+type documentCursor struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ErrDocumentNotFound 表示文档不存在
+var ErrDocumentNotFound = errors.New("document not found")
+
 // VectorDB 定义了向量数据库操作的接口。
 type VectorDB interface {
 	StoreDocument(ctx context.Context, title, minioKey string, metadata map[string]interface{}) (string, error)
 	StoreChunk(ctx context.Context, docID string, chunkIndex int, content string, embedding []float32, metadata map[string]interface{}) error
 	SearchSimilarChunks(ctx context.Context, queryVector []float32, limit int, threshold float32) ([]ChunkSearchResult, error)
+	ListDocuments(ctx context.Context, pageSize int, cursor string) ([]DocumentRecord, string, error)
+	DeleteDocument(ctx context.Context, documentID string) error
 	GetDimensions() int
 	GetTableNames() (documents, chunks string)
 }
@@ -277,6 +298,109 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 
 	logger.Get().Info(fmt.Sprintf("向量搜索完成，找到 %d 个相似块", len(results)))
 	return results, nil
+}
+
+// ListDocuments 返回文档列表（按创建时间倒序）
+func (db *PostgresVectorDB) ListDocuments(ctx context.Context, pageSize int, cursor string) ([]DocumentRecord, string, error) {
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	var (
+		query     string
+		args      []interface{}
+		hasCursor bool
+		cur       documentCursor
+	)
+
+	if cursor != "" {
+		decoded, err := base64.StdEncoding.DecodeString(cursor)
+		if err == nil {
+			if err := json.Unmarshal(decoded, &cur); err == nil && !cur.CreatedAt.IsZero() && cur.ID != "" {
+				hasCursor = true
+			}
+		}
+	}
+
+	if hasCursor {
+		query = fmt.Sprintf(`SELECT id, title, minio_key, metadata, created_at
+			FROM %s
+			WHERE (created_at < $1) OR (created_at = $1 AND id < $2)
+			ORDER BY created_at DESC, id DESC
+			LIMIT $3`, db.documentsTable)
+		args = []interface{}{cur.CreatedAt, cur.ID, pageSize}
+	} else {
+		query = fmt.Sprintf(`SELECT id, title, minio_key, metadata, created_at
+			FROM %s
+			ORDER BY created_at DESC, id DESC
+			LIMIT $1`, db.documentsTable)
+		args = []interface{}{pageSize}
+	}
+
+	rows, err := db.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", fmt.Errorf("查询文档列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []DocumentRecord
+	for rows.Next() {
+		var (
+			doc          DocumentRecord
+			metadataJSON []byte
+		)
+		if err := rows.Scan(&doc.ID, &doc.Title, &doc.MinioKey, &metadataJSON, &doc.CreatedAt); err != nil {
+			logger.Get().Error("扫描文档行失败", "error", err)
+			continue
+		}
+
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &doc.Metadata); err != nil {
+				logger.Get().Error("解析文档 metadata 失败", "error", err)
+				doc.Metadata = make(map[string]interface{})
+			}
+		} else {
+			doc.Metadata = make(map[string]interface{})
+		}
+
+		docs = append(docs, doc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("遍历文档行失败: %w", err)
+	}
+
+	var nextCursor string
+	if len(docs) == pageSize {
+		last := docs[len(docs)-1]
+		payload, err := json.Marshal(documentCursor{
+			ID:        last.ID,
+			CreatedAt: last.CreatedAt.UTC(),
+		})
+		if err == nil {
+			nextCursor = base64.StdEncoding.EncodeToString(payload)
+		}
+	}
+
+	return docs, nextCursor, nil
+}
+
+// DeleteDocument 删除文档（级联删除分块）
+func (db *PostgresVectorDB) DeleteDocument(ctx context.Context, documentID string) error {
+	if documentID == "" {
+		return fmt.Errorf("document id required")
+	}
+	cmdTag, err := db.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, db.documentsTable), documentID)
+	if err != nil {
+		return fmt.Errorf("删除文档失败: %w", err)
+	}
+	if cmdTag.RowsAffected() == 0 {
+		return ErrDocumentNotFound
+	}
+	return nil
 }
 
 // GetDimensions 返回向量维度

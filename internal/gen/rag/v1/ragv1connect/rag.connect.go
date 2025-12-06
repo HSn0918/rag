@@ -39,14 +39,22 @@ const (
 	RagServiceUploadPdfProcedure = "/rag.v1.RagService/UploadPdf"
 	// RagServiceGetContextProcedure is the fully-qualified name of the RagService's GetContext RPC.
 	RagServiceGetContextProcedure = "/rag.v1.RagService/GetContext"
+	// RagServiceListDocumentsProcedure is the fully-qualified name of the RagService's ListDocuments
+	// RPC.
+	RagServiceListDocumentsProcedure = "/rag.v1.RagService/ListDocuments"
+	// RagServiceDeleteDocumentProcedure is the fully-qualified name of the RagService's DeleteDocument
+	// RPC.
+	RagServiceDeleteDocumentProcedure = "/rag.v1.RagService/DeleteDocument"
 )
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
-	ragServiceServiceDescriptor          = v1.File_rag_v1_rag_proto.Services().ByName("RagService")
-	ragServicePreUploadMethodDescriptor  = ragServiceServiceDescriptor.Methods().ByName("PreUpload")
-	ragServiceUploadPdfMethodDescriptor  = ragServiceServiceDescriptor.Methods().ByName("UploadPdf")
-	ragServiceGetContextMethodDescriptor = ragServiceServiceDescriptor.Methods().ByName("GetContext")
+	ragServiceServiceDescriptor              = v1.File_rag_v1_rag_proto.Services().ByName("RagService")
+	ragServicePreUploadMethodDescriptor      = ragServiceServiceDescriptor.Methods().ByName("PreUpload")
+	ragServiceUploadPdfMethodDescriptor      = ragServiceServiceDescriptor.Methods().ByName("UploadPdf")
+	ragServiceGetContextMethodDescriptor     = ragServiceServiceDescriptor.Methods().ByName("GetContext")
+	ragServiceListDocumentsMethodDescriptor  = ragServiceServiceDescriptor.Methods().ByName("ListDocuments")
+	ragServiceDeleteDocumentMethodDescriptor = ragServiceServiceDescriptor.Methods().ByName("DeleteDocument")
 )
 
 // RagServiceClient is a client for the rag.v1.RagService service.
@@ -57,6 +65,10 @@ type RagServiceClient interface {
 	UploadPdf(context.Context, *connect.Request[v1.UploadPdfRequest]) (*connect.Response[v1.UploadPdfResponse], error)
 	// 根据查询获取相关上下文
 	GetContext(context.Context, *connect.Request[v1.GetContextRequest]) (*connect.Response[v1.GetContextResponse], error)
+	// 列出已上传文档
+	ListDocuments(context.Context, *connect.Request[v1.ListDocumentsRequest]) (*connect.Response[v1.ListDocumentsResponse], error)
+	// 删除文档（同时删除关联分块）
+	DeleteDocument(context.Context, *connect.Request[v1.DeleteDocumentRequest]) (*connect.Response[v1.DeleteDocumentResponse], error)
 }
 
 // NewRagServiceClient constructs a client for the rag.v1.RagService service. By default, it uses
@@ -87,14 +99,28 @@ func NewRagServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(ragServiceGetContextMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		listDocuments: connect.NewClient[v1.ListDocumentsRequest, v1.ListDocumentsResponse](
+			httpClient,
+			baseURL+RagServiceListDocumentsProcedure,
+			connect.WithSchema(ragServiceListDocumentsMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		deleteDocument: connect.NewClient[v1.DeleteDocumentRequest, v1.DeleteDocumentResponse](
+			httpClient,
+			baseURL+RagServiceDeleteDocumentProcedure,
+			connect.WithSchema(ragServiceDeleteDocumentMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // ragServiceClient implements RagServiceClient.
 type ragServiceClient struct {
-	preUpload  *connect.Client[v1.PreUploadRequest, v1.PreUploadResponse]
-	uploadPdf  *connect.Client[v1.UploadPdfRequest, v1.UploadPdfResponse]
-	getContext *connect.Client[v1.GetContextRequest, v1.GetContextResponse]
+	preUpload      *connect.Client[v1.PreUploadRequest, v1.PreUploadResponse]
+	uploadPdf      *connect.Client[v1.UploadPdfRequest, v1.UploadPdfResponse]
+	getContext     *connect.Client[v1.GetContextRequest, v1.GetContextResponse]
+	listDocuments  *connect.Client[v1.ListDocumentsRequest, v1.ListDocumentsResponse]
+	deleteDocument *connect.Client[v1.DeleteDocumentRequest, v1.DeleteDocumentResponse]
 }
 
 // PreUpload calls rag.v1.RagService.PreUpload.
@@ -112,6 +138,16 @@ func (c *ragServiceClient) GetContext(ctx context.Context, req *connect.Request[
 	return c.getContext.CallUnary(ctx, req)
 }
 
+// ListDocuments calls rag.v1.RagService.ListDocuments.
+func (c *ragServiceClient) ListDocuments(ctx context.Context, req *connect.Request[v1.ListDocumentsRequest]) (*connect.Response[v1.ListDocumentsResponse], error) {
+	return c.listDocuments.CallUnary(ctx, req)
+}
+
+// DeleteDocument calls rag.v1.RagService.DeleteDocument.
+func (c *ragServiceClient) DeleteDocument(ctx context.Context, req *connect.Request[v1.DeleteDocumentRequest]) (*connect.Response[v1.DeleteDocumentResponse], error) {
+	return c.deleteDocument.CallUnary(ctx, req)
+}
+
 // RagServiceHandler is an implementation of the rag.v1.RagService service.
 type RagServiceHandler interface {
 	// 预上传接口，生成文件上传的预签名URL
@@ -120,6 +156,10 @@ type RagServiceHandler interface {
 	UploadPdf(context.Context, *connect.Request[v1.UploadPdfRequest]) (*connect.Response[v1.UploadPdfResponse], error)
 	// 根据查询获取相关上下文
 	GetContext(context.Context, *connect.Request[v1.GetContextRequest]) (*connect.Response[v1.GetContextResponse], error)
+	// 列出已上传文档
+	ListDocuments(context.Context, *connect.Request[v1.ListDocumentsRequest]) (*connect.Response[v1.ListDocumentsResponse], error)
+	// 删除文档（同时删除关联分块）
+	DeleteDocument(context.Context, *connect.Request[v1.DeleteDocumentRequest]) (*connect.Response[v1.DeleteDocumentResponse], error)
 }
 
 // NewRagServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -146,6 +186,18 @@ func NewRagServiceHandler(svc RagServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(ragServiceGetContextMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	ragServiceListDocumentsHandler := connect.NewUnaryHandler(
+		RagServiceListDocumentsProcedure,
+		svc.ListDocuments,
+		connect.WithSchema(ragServiceListDocumentsMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	ragServiceDeleteDocumentHandler := connect.NewUnaryHandler(
+		RagServiceDeleteDocumentProcedure,
+		svc.DeleteDocument,
+		connect.WithSchema(ragServiceDeleteDocumentMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/rag.v1.RagService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RagServicePreUploadProcedure:
@@ -154,6 +206,10 @@ func NewRagServiceHandler(svc RagServiceHandler, opts ...connect.HandlerOption) 
 			ragServiceUploadPdfHandler.ServeHTTP(w, r)
 		case RagServiceGetContextProcedure:
 			ragServiceGetContextHandler.ServeHTTP(w, r)
+		case RagServiceListDocumentsProcedure:
+			ragServiceListDocumentsHandler.ServeHTTP(w, r)
+		case RagServiceDeleteDocumentProcedure:
+			ragServiceDeleteDocumentHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -173,4 +229,12 @@ func (UnimplementedRagServiceHandler) UploadPdf(context.Context, *connect.Reques
 
 func (UnimplementedRagServiceHandler) GetContext(context.Context, *connect.Request[v1.GetContextRequest]) (*connect.Response[v1.GetContextResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.GetContext is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) ListDocuments(context.Context, *connect.Request[v1.ListDocumentsRequest]) (*connect.Response[v1.ListDocumentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.ListDocuments is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) DeleteDocument(context.Context, *connect.Request[v1.DeleteDocumentRequest]) (*connect.Response[v1.DeleteDocumentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.DeleteDocument is not implemented"))
 }
