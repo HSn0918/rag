@@ -1,18 +1,16 @@
 # RAG System
 
-[English](README.md) | [中文](README_ZH.md)
+[中文](README_ZH.md) | English
 
-A document-based Retrieval-Augmented Generation system built with Go.
+Retrieval-Augmented Generation system for documents, built in Go with a Connect/gRPC API and a Next.js (Bun) frontend.
 
 ## Features
 
-- **Document Processing**: PDF parsing and text extraction using Doc2X
-- **Vector Storage**: PostgreSQL with pgvector for similarity search
-- **Embedding Generation**: Multiple embedding models support
-- **LLM Integration**: OpenAI-compatible API for text generation
-- **Caching**: Redis for performance optimization
-- **File Storage**: MinIO for document storage
-- **Reranking**: Document relevance scoring
+- **Document pipeline**: Presigned upload → PDF text extraction (Doc2X) → semantic chunking → embeddings → pgvector storage
+- **Hybrid retrieval**: Vector search + keyword-aware rerank, then LLM summarization
+- **Clients**: Connect/gRPC; generated Go/TypeScript stubs; Bun/Next.js demo UI with virtual scrolling
+- **Infra**: PostgreSQL + pgvector, Redis cache, MinIO object storage
+- **Ops**: `just gen` for proto codegen via Docker, `just web-*` for frontend tasks
 
 ## Architecture
 
@@ -37,167 +35,79 @@ internal/
 
 ## Requirements
 
-- Go 1.25+
-- PostgreSQL with pgvector extension
+- Go 1.21+ (recommended)
+- PostgreSQL with pgvector
 - Redis
-- MinIO (or S3-compatible storage)
+- MinIO (or S3-compatible) for object storage
+- Docker (for `just gen` codegen) and Bun (for the Next.js frontend)
 
-## Installation
+## Quickstart
 
-1. Clone the repository:
+1) Clone & Go deps
 ```bash
 git clone https://github.com/hsn0918/rag.git
 cd rag
-```
-
-2. Install dependencies:
-```bash
 go mod download
 ```
 
-3. Set up your configuration (see Configuration section)
+2) Configure: copy `config.example.yaml` to `config.yaml` and fill in DB/Redis/MinIO/API keys.
 
-4. Run the server:
+3) Generate code (requires Docker):
+```bash
+just gen
+```
+
+4) Run server:
 ```bash
 go run cmd/server/main.go
 ```
 
+5) Frontend (Bun + Next.js):
+```bash
+cd web
+bun install
+bun run dev
+```
+
 ## Configuration
 
-Configure the system using environment variables or configuration files. Key settings include:
+Use `config.yaml` (see `config.example.yaml`) or env vars:
 
-- Database connections (PostgreSQL, Redis)
-- External service endpoints and API keys
-- Storage configuration (MinIO)
-- Server port and settings
+- `server`: host/port
+- `database`: PostgreSQL + pgvector DSN parts
+- `redis`: host/port/auth
+- `minio`: endpoint/access keys/bucket
+- `services`: Doc2X, Embedding, Reranker, LLM endpoints + models/API keys
+- `chunking`: chunk sizes/overlap/semantic options
 
-## API Endpoints
+## API (Connect/gRPC)
 
-The system provides a gRPC/Connect API with the following endpoints:
+Service: `rag.v1.RagService`
 
-### 1. Pre-upload File
-Generate a presigned URL for direct file upload to storage.
+- `POST /rag.v1.RagService/PreUpload` — presigned upload URL
+- `POST /rag.v1.RagService/UploadPdf` — process & index PDF
+- `POST /rag.v1.RagService/GetContext` — full RAG pipeline (keywords → embedding → search → rerank → summarize)
+- `POST /rag.v1.RagService/ListDocuments` — cursor-paginated doc list
+- `POST /rag.v1.RagService/DeleteDocument` — delete doc and chunks
 
-**Endpoint**: `POST /rag.v1.RagService/PreUpload`
+See `api/rag/v1/rag.proto` for message shapes; generated clients in `internal/gen` (Go) and `web/gen` (TS).
 
-**Request**:
-```json
-{
-  "filename": "document.pdf"
-}
-```
+## CLI & Scripts
 
-**Response**:
-```json
-{
-  "upload_url": "https://minio.example.com/...",
-  "file_key": "unique-file-key",
-  "expires_in": 900
-}
-```
+- `just gen` — buf codegen (via Docker), fixes TS import extensions
+- `just web-install|web-dev|web-build|web-start|web-lint` — frontend tasks (Bun)
+- `go run cmd/server/main.go` — start backend
 
-**Parameters**:
-- `filename` (required): Original filename of the document
+## Frontend (Next.js + Bun)
 
-### 2. Upload Document
-Process and index a PDF document that was uploaded to storage.
+- Uses generated Connect TS client; proxy to backend via `web/next.config.mjs` (`/api -> BACKEND_URL`).
+- Includes upload flow, RAG query, document list (cursor pagination, delete), keyword D3 visualization, and structured answer rendering.
 
-**Endpoint**: `POST /rag.v1.RagService/UploadPdf`
+## Notes
 
-**Request**:
-```json
-{
-  "file_key": "unique-file-key",
-  "filename": "document.pdf"
-}
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "message": "PDF processed successfully. Document ID: doc123, Chunks: 25",
-  "document_id": "doc123"
-}
-```
-
-**Parameters**:
-- `file_key` (required): File key returned from PreUpload
-- `filename` (required): Original filename
-
-**Process**:
-1. Downloads file from storage using the file key
-2. Extracts text content using Doc2X service
-3. Splits content into semantic chunks
-4. Generates embeddings for each chunk
-5. Stores document and chunks in PostgreSQL with pgvector
-
-### 3. Query Context
-Retrieve relevant information based on natural language queries.
-
-**Endpoint**: `POST /rag.v1.RagService/GetContext`
-
-**Request**:
-```json
-{
-  "query": "How to implement machine learning algorithms?"
-}
-```
-
-**Response**:
-```json
-{
-  "context": "Based on your query about implementing machine learning algorithms...\n\n## Relevant Information\n\n1. Algorithm Selection...\n2. Implementation Steps..."
-}
-```
-
-**Parameters**:
-- `query` (required): Natural language query in Chinese or English
-
-**Process**:
-1. Uses LLM to extract keywords from the query
-2. Generates embedding vector for semantic search
-3. Searches similar document chunks using pgvector
-4. Re-ranks results using hybrid scoring (similarity + keyword matching)
-5. Uses LLM to generate intelligent summary from retrieved chunks
-
-## Configuration Parameters
-
-### Chunking Configuration
-- `max_chunk_size`: Maximum size of text chunks (default: 1000)
-- `overlap_size`: Overlap between chunks (default: 100)
-- `adaptive_size`: Enable adaptive chunk sizing
-- `paragraph_boundary`: Respect paragraph boundaries
-- `sentence_boundary`: Respect sentence boundaries
-
-### Embedding Configuration
-- Supported models: BGE-Large, BGE-M3, Qwen3-Embedding series
-- Dimensions: Model-specific (768-4096)
-- Token limits: 512-32768 depending on model
-
-### Search Configuration
-- `similarity_threshold`: Minimum similarity score (0.25-0.4)
-- `max_results`: Maximum number of results (5-15)
-- `rerank_enabled`: Enable intelligent re-ranking
-
-## Response Formats
-
-### Error Response
-All endpoints return standard Connect/gRPC errors:
-
-```json
-{
-  "code": "INVALID_ARGUMENT",
-  "message": "filename is required"
-}
-```
-
-### Success Indicators
-- Upload operations return `success: true` with processing details
-- Query operations return structured context with similarity scores
-- All responses include relevant metadata and usage tips
-
-## Dependencies
+- For codegen, Docker access is required (bufbuild/buf container).
+- For embedding/rerank/LLM services, update API keys and models in `config.yaml`.
+- Ensure pgvector extension exists in Postgres and the DSN matches your config.
 
 - **Database**: `github.com/jackc/pgx/v5` for PostgreSQL
 - **Vector Search**: `github.com/pgvector/pgvector-go` for embeddings

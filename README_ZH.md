@@ -1,16 +1,14 @@
 # RAG 系统
 
-基于 Go 构建的文档检索增强生成系统。
+基于 Go 的文档检索增强生成系统，提供 Connect/gRPC 接口和 Next.js（Bun）前端示例。
 
 ## 功能特性
 
-- **文档处理**: 使用 Doc2X 进行 PDF 解析和文本提取
-- **向量存储**: PostgreSQL + pgvector 实现语义相似性搜索
-- **嵌入生成**: 支持多种嵌入模型
-- **大模型集成**: OpenAI 兼容 API 进行文本生成
-- **缓存优化**: Redis 缓存提升性能
-- **文件存储**: MinIO 对象存储
-- **智能重排**: 文档相关性评分
+- **文档管线**：预上传 URL → PDF 文本提取（Doc2X）→ 语义分块 → 向量化 → pgvector 存储
+- **检索/重排**：向量搜索 + 关键词加权重排，最终由 LLM 生成总结
+- **客户端**：提供 Go/TS 代码生成，Next.js 演示 UI（虚拟滚动列表、删除文档、关键词 D3 可视化）
+- **基础设施**：PostgreSQL + pgvector、Redis 缓存、MinIO 对象存储
+- **工具链**：`just gen` 进行 proto 代码生成（Docker），`just web-*` 前端快捷命令（Bun）
 
 ## 系统架构
 
@@ -35,89 +33,62 @@ internal/
 
 ## 环境要求
 
-- Go 1.25+
-- PostgreSQL（带 pgvector 扩展）
+- Go 1.25+（建议）
+- PostgreSQL + pgvector
 - Redis
-- MinIO（或 S3 兼容存储）
+- MinIO（或 S3 兼容）
+- Docker（用于 `just gen` 代码生成）与 Bun（运行 Next.js 前端）
 
-## 安装部署
+## 快速开始
 
-1. 克隆仓库：
+1) 拉取代码并安装 Go 依赖
 ```bash
 git clone https://github.com/hsn0918/rag.git
 cd rag
-```
-
-2. 安装依赖：
-```bash
 go mod download
 ```
 
-3. 配置系统（详见配置章节）
+2) 配置：复制 `config.example.yaml` 为 `config.yaml`，填入数据库/Redis/MinIO/API Key。
 
-4. 启动服务：
+3) 代码生成（需 Docker）：
+```bash
+just gen
+```
+
+4) 启动后端：
 ```bash
 go run cmd/server/main.go
 ```
 
+5) 前端（Bun + Next.js）：
+```bash
+cd web
+bun install
+bun run dev
+```
+
 ## 配置说明
 
-通过环境变量或配置文件进行系统配置，主要包括：
+使用 `config.yaml`（示例见 `config.example.yaml`）或环境变量：
 
-- 数据库连接（PostgreSQL, Redis）
-- 外部服务端点和 API 密钥
-- 存储配置（MinIO）
-- 服务器端口和设置
+- `server`：监听地址/端口
+- `database`：PostgreSQL + pgvector
+- `redis`：主机/端口/认证
+- `minio`：endpoint/AK/SK/bucket
+- `services`：Doc2X、Embedding、Reranker、LLM 的 endpoint、模型和 API Key
+- `chunking`：分块大小、重叠、语义分块等
 
-## API 接口
+## API（Connect/gRPC）
 
-系统提供 gRPC/Connect API，包含以下接口：
+服务：`rag.v1.RagService`
 
-### 1. 预上传文件
-生成用于直接文件上传到存储的预签名 URL。
+- `POST /rag.v1.RagService/PreUpload` — 获取预签名上传 URL
+- `POST /rag.v1.RagService/UploadPdf` — 处理并入库 PDF
+- `POST /rag.v1.RagService/GetContext` — 完整 RAG（提词 → 向量 → 检索 → 重排 → 总结）
+- `POST /rag.v1.RagService/ListDocuments` — 游标分页列出文档
+- `POST /rag.v1.RagService/DeleteDocument` — 删除文档及其分块
 
-**接口**: `POST /rag.v1.RagService/PreUpload`
-
-**请求参数**:
-```json
-{
-  "filename": "document.pdf"
-}
-```
-
-**响应结果**:
-```json
-{
-  "upload_url": "https://minio.example.com/...",
-  "file_key": "unique-file-key",
-  "expires_in": 900
-}
-```
-
-**参数说明**:
-- `filename` (必需): 文档的原始文件名
-
-### 2. 上传文档
-处理并索引已上传到存储的 PDF 文档。
-
-**接口**: `POST /rag.v1.RagService/UploadPdf`
-
-**请求参数**:
-```json
-{
-  "file_key": "unique-file-key",
-  "filename": "document.pdf"
-}
-```
-
-**响应结果**:
-```json
-{
-  "success": true,
-  "message": "PDF 处理成功。文档 ID: doc123，分块数: 25",
-  "document_id": "doc123"
-}
-```
+消息定义见 `api/rag/v1/rag.proto`，生成代码位于 `internal/gen`（Go）和 `web/gen`（TS）。
 
 **参数说明**:
 - `file_key` (必需): 预上传返回的文件密钥
@@ -159,45 +130,22 @@ go run cmd/server/main.go
 4. 使用混合评分（相似度 + 关键词匹配）重新排序
 5. 使用大模型从检索的块生成智能摘要
 
-## 配置参数
+## CLI/脚本
 
-### 分块配置
-- `max_chunk_size`: 文本块最大大小（默认: 1000）
-- `overlap_size`: 块之间重叠大小（默认: 100）
-- `adaptive_size`: 启用自适应块大小
-- `paragraph_boundary`: 尊重段落边界
-- `sentence_boundary`: 尊重句子边界
+- `just gen` — 通过 Docker 运行 buf 生成 Go/TS 代码
+- `just web-install|web-dev|web-build|web-start|web-lint` — 前端快捷命令（Bun）
+- `go run cmd/server/main.go` — 启动后端
 
-### 嵌入配置
-- 支持模型: BGE-Large、BGE-M3、Qwen3-Embedding 系列
-- 维度: 特定于模型（768-4096）
-- Token 限制: 根据模型为 512-32768
+## 前端说明
 
-### 搜索配置
-- `similarity_threshold`: 最小相似度分数（0.25-0.4）
-- `max_results`: 最大结果数量（5-15）
-- `rerank_enabled`: 启用智能重排
+- Next.js（Bun）+ Connect TS 客户端，通过 `web/next.config.mjs` 将 `/api` 代理到后端。
+- 功能：上传流程、RAG 查询、文档列表（游标分页 + 删除）、关键词 D3 可视化、结构化答案展示。
 
-## 响应格式
+## 注意事项
 
-### 错误响应
-所有接口返回标准 Connect/gRPC 错误：
-
-```json
-{
-  "code": "INVALID_ARGUMENT",
-  "message": "filename is required"
-}
-```
-
-### 成功指示
-- 上传操作返回 `success: true` 和处理详情
-- 查询操作返回结构化上下文和相似度分数
-- 所有响应都包含相关元数据和使用提示
-
-## 技术依赖
-
-- **数据库**: `github.com/jackc/pgx/v5` 用于 PostgreSQL
+- 运行 `just gen` 需要 Docker 权限（bufbuild/buf 镜像）。
+- 嵌入/重排/LLM 服务的 API Key 和模型请在 `config.yaml` 中更新。
+- 确保 Postgres 已安装 pgvector 扩展，配置的 DSN 与实际一致。
 - **向量搜索**: `github.com/pgvector/pgvector-go` 用于嵌入向量
 - **缓存**: `github.com/redis/rueidis` 用于 Redis
 - **存储**: `github.com/minio/minio-go/v7` 用于对象存储
