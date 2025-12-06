@@ -111,6 +111,7 @@ export default function Home() {
     const [keywords, setKeywords] = React.useState<string[]>([])
     const [chunks, setChunks] = React.useState<any[]>([])
     const [rerankedChunks, setRerankedChunks] = React.useState<any[]>([])
+    const [latency, setLatency] = React.useState<number | null>(null)
 
     const handleSearch = async (query: string) => {
         setPipelineStep("search")
@@ -118,15 +119,19 @@ export default function Home() {
         setKeywords([])
         setChunks([])
         setRerankedChunks([])
+        setLatency(null)
 
         try {
             // Visualize "working" state
             setPipelineStep("search")
 
+            const startTime = performance.now()
             // Call the unified RAG endpoint with 1 minute timeout
             const res = await client.getContext({ query }, {
                 timeoutMs: 60000 // 1 minute
             })
+            const endTime = performance.now()
+            setLatency(endTime - startTime)
 
             // Simulate steps for visual feedback (optional, or just jump to complete)
             setPipelineStep("complete")
@@ -138,6 +143,9 @@ export default function Home() {
             demoSimulation()
         }
     }
+
+    // ... (demoSimulation)
+
 
     const demoSimulation = async () => {
         const steps: PipelineStep[] = ["keywords", "embedding", "search", "rerank", "summary"]
@@ -295,7 +303,9 @@ export default function Home() {
                                 </div>
                                 <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-900/50 border text-sm">
                                     <div className="font-semibold mb-1 flex items-center gap-2"><BrainCircuit className="w-4 h-4" /> 延迟</div>
-                                    <div className="text-muted-foreground">1.2 秒</div>
+                                    <div className="text-muted-foreground">
+                                        {latency ? `${(latency / 1000).toFixed(2)} 秒` : '-'}
+                                    </div>
                                 </div>
                             </div>
                         </div>

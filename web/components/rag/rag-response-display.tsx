@@ -7,7 +7,9 @@ import {
     Quote,
     ChevronDown,
     ChevronUp,
-    AlignLeft
+    AlignLeft,
+    Copy,
+    Check
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -29,11 +31,19 @@ interface ParsedResponse {
         similarity: string
         summary: string
     }[]
+    footer?: string
 }
 
 export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
     const [parsed, setParsed] = React.useState<ParsedResponse | null>(null)
     const [isRaw, setIsRaw] = React.useState(false)
+    const [isCopied, setIsCopied] = React.useState(false)
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(content)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+    }
 
     React.useEffect(() => {
         try {
@@ -42,6 +52,8 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
             // Wrap in root if not present to ensure validity, though rag_response should be root.
             // Check if it starts with <rag_response>
             let xmlContent = content.trim()
+            let footerContent = ""
+
             if (!xmlContent.startsWith("<rag_response>")) {
                 // Try to find the start
                 const idx = xmlContent.indexOf("<rag_response>")
@@ -52,10 +64,11 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
                 }
             }
 
-            // Clean up any trailing text after </rag_response>
+            // Capture text after </rag_response>
             const endTag = "</rag_response>"
             const endIdx = xmlContent.indexOf(endTag)
             if (endIdx !== -1) {
+                footerContent = xmlContent.substring(endIdx + endTag.length).trim()
                 xmlContent = xmlContent.substring(0, endIdx + endTag.length)
             }
 
@@ -89,7 +102,8 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
                     id: getText(el, "id"),
                     similarity: getText(el, "similarity"),
                     summary: getText(el, "summary")
-                }))
+                })),
+                footer: footerContent
             }
 
             setParsed(response)
@@ -101,13 +115,31 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
     }, [content])
 
     if (isRaw || !parsed) {
-        return <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border shadow-sm whitespace-pre-wrap">{content}</div>
+        return (
+            <div className="relative group">
+                <button
+                    onClick={handleCopy}
+                    className="absolute top-4 right-4 p-2 bg-white/50 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 rounded-lg text-gray-500 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    title="Copy Content"
+                >
+                    {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
+                <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border shadow-sm whitespace-pre-wrap">{content}</div>
+            </div>
+        )
     }
 
     return (
         <div className="space-y-6 max-w-4xl mx-auto">
             {/* Summary Section */}
-            <div className="p-6 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/30 dark:to-gray-900 rounded-2xl border border-indigo-100 dark:border-indigo-900 shadow-sm">
+            <div className="relative p-6 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950/30 dark:to-gray-900 rounded-2xl border border-indigo-100 dark:border-indigo-900 shadow-sm group">
+                <button
+                    onClick={handleCopy}
+                    className="absolute top-4 right-4 p-2 bg-white/50 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 rounded-lg text-indigo-500 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    title="Copy Answer"
+                >
+                    {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
                 <div className="flex items-start gap-3">
                     <Quote className="w-8 h-8 text-indigo-500 fill-indigo-500/20 px-0 flex-shrink-0" />
                     <div className="space-y-2">
@@ -203,6 +235,18 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
                     </div>
                 </div>
             )}
+
+            {/* Footer / Disclaimer */}
+            {parsed.footer && (
+                <div className="text-xs text-gray-400 dark:text-gray-500 text-center pt-4 border-t border-dashed dark:border-gray-800">
+                    {parsed.footer}
+                </div>
+            )}
         </div>
     )
+}
+
+function parseFooter(footer: string) {
+
+    return footer
 }

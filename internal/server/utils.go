@@ -48,6 +48,14 @@ func (s *RagServer) generateEmbedding(ctx context.Context, text string) ([]float
 		return cachedEmbedding, nil
 	}
 
+	// 检查服务依赖
+	if s.Embedding == nil {
+		return nil, fmt.Errorf("embedding service is not initialized")
+	}
+	if s.Config == nil {
+		return nil, fmt.Errorf("embedding service configuration is missing")
+	}
+
 	// 调用嵌入服务
 	embeddingResp, err := s.Embedding.CreateEmbeddingWithDefaults(s.Config.Services.Embedding.Model, text)
 	if err != nil {
