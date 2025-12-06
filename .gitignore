@@ -7,3 +7,5 @@ config.yaml
 /web/node_modules
 /web/.idea
 /web/.next
+.env
+AGENT.md
