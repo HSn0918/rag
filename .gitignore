@@ -4,3 +4,6 @@ config.yaml
 ./server
 ./main
 .vscode
+/web/node_modules
+/web/.idea
+/web/.next

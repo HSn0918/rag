@@ -1,4 +1,5 @@
 {
     "editor.fontLigatures": true,
-    "editor.fontVariations": false
+    "editor.fontVariations": false,
+    "git.ignoreLimitWarning": true
 }

@@ -1,0 +1,52 @@
+server:
+  host: "0.0.0.0"
+  port: "8080"
+
+database:
+  host: "localhost"
+  port: 7432
+  user: "postgres"
+  password: "password"
+  dbname: "ragdb"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+
+minio:
+  endpoint: "localhost:9000"
+  access_key_id: "minioadmin"
+  secret_access_key: "minioadmin"
+  bucket_name: "rag-files"
+  use_ssl: false
+
+chunking:
+  max_chunk_size: 2000
+  overlap_size: 200
+  min_chunk_size: 200
+  sentence_boundary: true
+  paragraph_boundary: true
+  adaptive_size: true
+  size_multiplier: 2
+
+services:
+  doc2x:
+    base_url: "https://v2.doc2x.noedgeai.com"
+    api_key: "replace-with-your-doc2x-api-key"
+
+  embedding:
+    base_url: "https://api.siliconflow.cn/v1"
+    api_key: "replace-with-your-embedding-api-key"
+    model: "Qwen/Qwen3-Embedding-8B"
+
+  reranker:
+    base_url: "https://api.siliconflow.cn/v1"
+    api_key: "replace-with-your-reranker-api-key"
+    model: "bge-reranker-base"
+
+  llm:
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "replace-with-your-llm-api-key"
+    model: "deepseek-chat"
