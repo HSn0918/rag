@@ -262,6 +262,9 @@ func (s *RagServer) runSearchStage(ctx context.Context, stage *contextStages) er
 //
 // The similarity threshold of 0.3 filters out low-relevance results.
 func (s *RagServer) searchSimilarChunks(ctx context.Context, queryVector []float32, limit int) ([]adapters.ChunkSearchResult, error) {
+	if s.DB == nil {
+		return nil, fmt.Errorf("database service is not initialized")
+	}
 	// 使用数据库的向量搜索功能
 	results, err := s.DB.SearchSimilarChunks(ctx, queryVector, limit, 0.3) // 0.3是相似度阈值
 	if err != nil {
@@ -429,6 +432,11 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 					},
 				}
 
+				if s.LLM == nil || s.Config == nil {
+					logger.Get().Warn("LLM service or config not initialized, falling back to basic kws (path 1)")
+					return pkgutils.ExtractBasicKeywords(query), nil
+				}
+
 				resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 				if err != nil {
 					logger.Get().Error("LLM关键词提取失败", slog.Any("error", err))
@@ -484,6 +492,11 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 						Role:    "user",
 						Content: userContent,
 					},
+				}
+
+				if s.LLM == nil || s.Config == nil {
+					logger.Get().Warn("LLM service or config not initialized, falling back to basic kws (path 2)")
+					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
 				resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
@@ -693,6 +706,10 @@ func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapter
 	}
 
 	// 调用LLM进行智能总结
+	if s.LLM == nil || s.Config == nil {
+		logger.Get().Warn("LLM service not initialized, falling back to basic summary")
+		return s.generateBasicContextSummary(chunks, query), nil
+	}
 	resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 	if err != nil {
 		logger.Get().Error("LLM智能总结失败，回退到基础模板", slog.Any("error", err))

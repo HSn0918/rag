@@ -136,14 +136,14 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
                 <button
                     onClick={handleCopy}
                     className="absolute top-4 right-4 p-2 bg-white/50 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 rounded-lg text-indigo-500 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                    title="Copy Answer"
+                    title="复制回答"
                 >
                     {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </button>
                 <div className="flex items-start gap-3">
                     <Quote className="w-8 h-8 text-indigo-500 fill-indigo-500/20 px-0 flex-shrink-0" />
                     <div className="space-y-2">
-                        <h3 className="font-semibold text-indigo-900 dark:text-indigo-100 uppercase tracking-wider text-xs">Summary</h3>
+                        <h3 className="font-semibold text-indigo-900 dark:text-indigo-100 uppercase tracking-wider text-xs">总结</h3>
                         <p className="text-lg text-gray-800 dark:text-gray-200 leading-relaxed font-medium">
                             {parsed.summary}
                         </p>
@@ -209,12 +209,12 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
             {/* Completeness Assessment */}
             <div className="grid md:grid-cols-2 gap-6">
                 <div className="p-5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">Assessment</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">完整性评估</h4>
                     <p className="text-sm text-gray-700 dark:text-gray-300">{parsed.completeness.assessment}</p>
                 </div>
                 <div className="p-5 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-600/70 mb-3 flex items-center gap-2">
-                        <AlertCircle className="w-3 h-3" /> Missing Info
+                        <AlertCircle className="w-3 h-3" /> 信息缺失
                     </h4>
                     <p className="text-sm text-gray-700 dark:text-gray-300">{parsed.completeness.missingInfo}</p>
                 </div>
@@ -223,7 +223,7 @@ export function RagResponseDisplay({ content }: RagResponseDisplayProps) {
             {/* Sources */}
             {parsed.sources.length > 0 && (
                 <div className="pt-4 border-t dark:border-gray-800">
-                    <h3 className="text-sm font-semibold text-gray-500 mb-4">Reference Sources</h3>
+                    <h3 className="text-sm font-semibold text-gray-500 mb-4">参考来源</h3>
                     <div className="grid gap-3">
                         {parsed.sources.map((source, i) => (
                             <div key={i} className="flex items-start gap-4 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs">
