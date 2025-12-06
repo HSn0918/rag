@@ -205,7 +205,7 @@ All endpoints return standard Connect/gRPC errors:
 - **Storage**: `github.com/minio/minio-go/v7` for object storage
 - **HTTP Client**: `github.com/go-resty/resty/v2` for external APIs
 - **Dependency Injection**: `go.uber.org/fx` for application structure
-- **Logging**: `go.uber.org/zap` for structured logging
+- **Logging**: `log/slog` for structured logging
 
 ## Contributing
 

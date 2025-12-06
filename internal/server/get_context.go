@@ -16,8 +16,17 @@ import (
 	"github.com/hsn0918/rag/pkg/prompts"
 	"github.com/hsn0918/rag/pkg/search"
 	pkgutils "github.com/hsn0918/rag/pkg/utils"
-	"go.uber.org/zap"
+	"log/slog"
 )
+
+type contextStages struct {
+	query         string
+	keywords      []string
+	queryText     string
+	queryVector   []float32
+	similarChunks []adapters.ChunkSearchResult
+	rankedChunks  []adapters.ChunkSearchResult
+}
 
 // GetContext implements intelligent document retrieval and question-answering
 // functionality using RAG (Retrieval-Augmented Generation).
@@ -42,167 +51,79 @@ func (s *RagServer) GetContext(
 	}
 
 	logger.Get().Info("开始处理智能文档检索请求",
-		zap.String("query", query),
-		zap.Int("query_length", len(query)),
-		zap.String("request_id", req.Header().Get("X-Request-ID")),
-		zap.Time("start_time", startTime),
+		slog.String("query", query),
+		slog.Int("query_length", len(query)),
+		slog.String("request_id", req.Header().Get("X-Request-ID")),
+		slog.Time("start_time", startTime),
 	)
 
-	// 第一步：使用大模型进行智能分词和关键词提取
-	logger.Get().Debug("开始提取关键词", zap.String("query", query))
-	keywordsStart := time.Now()
-	keywords, err := s.generateKeywords(ctx, query)
-	keywordsDuration := time.Since(keywordsStart)
+	stage := &contextStages{query: query}
 
-	if err != nil {
-		logger.Get().Error("大模型关键词提取失败",
-			zap.Error(err),
-			zap.Duration("duration", keywordsDuration),
-		)
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate keywords: %w", err))
+	if err := s.runKeywordStage(ctx, stage); err != nil {
+		return nil, err
 	}
-	logger.Get().Info("大模型关键词提取完成",
-		zap.Strings("keywords", keywords),
-		zap.Int("keywords_count", len(keywords)),
-		zap.Duration("duration", keywordsDuration),
-	)
-
-	// 第二步：生成语义向量进行相似性搜索
-	// 优先使用提取的关键词，回退到原始查询
-	queryText := strings.Join(keywords, " ")
-	if queryText == "" {
-		logger.Get().Debug("关键词为空，使用原始查询生成向量")
-		queryText = query
+	if err := s.runEmbeddingStage(ctx, stage); err != nil {
+		return nil, err
 	}
-
-	logger.Get().Debug("开始生成查询向量", zap.String("query_text", queryText))
-	embeddingStart := time.Now()
-	queryVector, err := s.generateEmbedding(ctx, queryText)
-	embeddingDuration := time.Since(embeddingStart)
-
-	if err != nil {
-		logger.Get().Error("查询向量生成失败",
-			zap.Error(err),
-			zap.Duration("duration", embeddingDuration),
-		)
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate query embedding: %w", err))
+	if err := s.runSearchStage(ctx, stage); err != nil {
+		return nil, err
 	}
-	logger.Get().Debug("查询向量生成完成",
-		zap.Int("vector_dim", len(queryVector)),
-		zap.Duration("duration", embeddingDuration),
-	)
-
-	// 第三步：使用优化的搜索策略
-	var similarChunks []adapters.ChunkSearchResult
-	searchStart := time.Now()
-
-	// Check if search optimizer is available
-	if s.SearchOptimizer != nil {
-		logger.Get().Debug("使用优化搜索策略")
-		// Use optimized hybrid search
-		similarChunks, err = s.SearchOptimizer.OptimizedSearch(ctx, query, queryVector)
-		if err != nil {
-			logger.Get().Error("优化搜索失败，回退到标准搜索",
-				zap.Error(err),
-				zap.Duration("failed_duration", time.Since(searchStart)),
-			)
-			// Fallback to standard search
-			similarChunks, err = s.searchSimilarChunks(ctx, queryVector, 15)
-			if err != nil {
-				logger.Get().Error("向量相似性搜索失败",
-					zap.Error(err),
-					zap.Duration("total_search_duration", time.Since(searchStart)),
-				)
-				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
-			}
-		}
-	} else {
-		logger.Get().Debug("使用标准向量搜索")
-		// Standard vector similarity search
-		similarChunks, err = s.searchSimilarChunks(ctx, queryVector, 15) // 获取更多候选用于重排
-		if err != nil {
-			logger.Get().Error("向量相似性搜索失败",
-				zap.Error(err),
-				zap.Duration("search_duration", time.Since(searchStart)),
-			)
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
-		}
-	}
-
-	searchDuration := time.Since(searchStart)
-	logger.Get().Info("搜索完成",
-		zap.Int("chunks_found", len(similarChunks)),
-		zap.Duration("search_duration", searchDuration),
-	)
-
-	if logger.Get().Core().Enabled(zap.DebugLevel) {
-		for i, chunk := range similarChunks {
-			if i < 5 { // Only log top 5 for brevity
-				logger.Get().Debug("搜索结果详情",
-					zap.Int("rank", i+1),
-					zap.String("chunk_id", chunk.ChunkID),
-					zap.Float32("similarity", chunk.Similarity),
-					zap.Int("content_length", len(chunk.Content)),
-				)
-			}
-		}
-	}
-	if len(similarChunks) == 0 {
+	if len(stage.similarChunks) == 0 {
 		logger.Get().Warn("未找到相关文档",
-			zap.String("query", query),
-			zap.Strings("keywords", keywords),
-			zap.Duration("total_duration", time.Since(startTime)),
+			slog.String("query", stage.query),
+			slog.Any("keywords", stage.keywords),
+			slog.Duration("total_duration", time.Since(startTime)),
 		)
 		return connect.NewResponse(&ragv1.GetContextResponse{
-			Context: fmt.Sprintf("未找到与查询 '%s' 相关的内容。请尝试使用不同的关键词。", query),
+			Context: fmt.Sprintf("未找到与查询 '%s' 相关的内容。请尝试使用不同的关键词。", stage.query),
 		}), nil
 	}
 
 	// 第四步：智能重排序 - 综合向量相似度和关键词匹配
 	logger.Get().Debug("开始智能重排序",
-		zap.Int("chunks_before", len(similarChunks)),
+		slog.Int("chunks_before", len(stage.similarChunks)),
 	)
 	rerankStart := time.Now()
-	rankedChunks := s.rerankChunksWithKeywords(similarChunks, query, keywords)
+	stage.rankedChunks = s.rerankChunksWithKeywords(stage.similarChunks, stage.query, stage.keywords)
 	rerankDuration := time.Since(rerankStart)
 
 	logger.Get().Info("重排序完成",
-		zap.Int("chunks_after", len(rankedChunks)),
-		zap.Duration("rerank_duration", rerankDuration),
+		slog.Int("chunks_after", len(stage.rankedChunks)),
+		slog.Duration("rerank_duration", rerankDuration),
 	)
 
-	if logger.Get().Core().Enabled(zap.DebugLevel) && len(rankedChunks) > 0 {
-		for i, chunk := range rankedChunks {
+	if logger.Get().Enabled(ctx, slog.LevelDebug) && len(stage.rankedChunks) > 0 {
+		for i, chunk := range stage.rankedChunks {
 			if i < 3 { // Log top 3 reranked results
 				logger.Get().Debug("重排序结果",
-					zap.Int("final_rank", i+1),
-					zap.String("chunk_id", chunk.ChunkID),
-					zap.Float32("similarity", chunk.Similarity),
-					zap.Any("advanced_score", chunk.Metadata["advanced_score"]),
+					slog.Int("final_rank", i+1),
+					slog.String("chunk_id", chunk.ChunkID),
+					slog.Float64("similarity", float64(chunk.Similarity)),
+					slog.Any("advanced_score", chunk.Metadata["advanced_score"]),
 				)
 			}
 		}
 	}
 	// 第五步：使用大模型生成个性化总结回答
 	logger.Get().Debug("开始生成个性化回答",
-		zap.String("query", query),
-		zap.Int("chunks_count", len(rankedChunks)),
+		slog.String("query", stage.query),
+		slog.Int("chunks_count", len(stage.rankedChunks)),
 	)
 	summaryStart := time.Now()
-	contextContent, err := s.generateContextSummary(ctx, rankedChunks, query)
+	contextContent, err := s.generateContextSummary(ctx, stage.rankedChunks, stage.query)
 	summaryDuration := time.Since(summaryStart)
 
 	if err != nil {
 		logger.Get().Error("大模型总结生成失败，回退到模板回答",
-			zap.Error(err),
-			zap.Duration("failed_duration", summaryDuration),
+			slog.Any("error", err),
+			slog.Duration("failed_duration", summaryDuration),
 		)
 		// 降级到模板回答
-		contextContent = s.buildContextResponse(rankedChunks, query)
+		contextContent = s.buildContextResponse(stage.rankedChunks, stage.query)
 	} else {
 		logger.Get().Info("个性化回答生成成功",
-			zap.Duration("summary_duration", summaryDuration),
-			zap.Int("summary_length", len(contextContent)),
+			slog.Duration("summary_duration", summaryDuration),
+			slog.Int("summary_length", len(contextContent)),
 		)
 	}
 
@@ -211,17 +132,125 @@ func (s *RagServer) GetContext(
 
 	totalDuration := time.Since(startTime)
 	logger.Get().Info("智能文档检索完成",
-		zap.String("query", query),
-		zap.Int("chunks_found", len(similarChunks)),
-		zap.Int("chunks_used", len(rankedChunks)),
-		zap.Int("response_length", len(contextContent)),
-		zap.Int64("processing_time_ms", processingTime),
-		zap.Duration("total_duration", totalDuration),
+		slog.String("query", stage.query),
+		slog.Int("chunks_found", len(stage.similarChunks)),
+		slog.Int("chunks_used", len(stage.rankedChunks)),
+		slog.Int("response_length", len(contextContent)),
+		slog.Int64("processing_time_ms", processingTime),
+		slog.Duration("total_duration", totalDuration),
 	)
 
 	return connect.NewResponse(&ragv1.GetContextResponse{
 		Context: contextContent,
 	}), nil
+}
+
+func (s *RagServer) runKeywordStage(ctx context.Context, stage *contextStages) error {
+	logger.Get().Debug("开始提取关键词", slog.String("query", stage.query))
+	start := time.Now()
+	keywords, err := s.generateKeywords(ctx, stage.query)
+	duration := time.Since(start)
+
+	if err != nil {
+		logger.Get().Error("大模型关键词提取失败",
+			slog.Any("error", err),
+			slog.Duration("duration", duration),
+		)
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate keywords: %w", err))
+	}
+	logger.Get().Info("大模型关键词提取完成",
+		slog.Any("keywords", keywords),
+		slog.Int("keywords_count", len(keywords)),
+		slog.Duration("duration", duration),
+	)
+	stage.keywords = keywords
+	return nil
+}
+
+func (s *RagServer) runEmbeddingStage(ctx context.Context, stage *contextStages) error {
+	stage.queryText = strings.Join(stage.keywords, " ")
+	if stage.queryText == "" {
+		logger.Get().Debug("关键词为空，使用原始查询生成向量")
+		stage.queryText = stage.query
+	}
+
+	logger.Get().Debug("开始生成查询向量", slog.String("query_text", stage.queryText))
+	start := time.Now()
+	vec, err := s.generateEmbedding(ctx, stage.queryText)
+	duration := time.Since(start)
+
+	if err != nil {
+		logger.Get().Error("查询向量生成失败",
+			slog.Any("error", err),
+			slog.Duration("duration", duration),
+		)
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate query embedding: %w", err))
+	}
+	logger.Get().Debug("查询向量生成完成",
+		slog.Int("vector_dim", len(vec)),
+		slog.Duration("duration", duration),
+	)
+	stage.queryVector = vec
+	return nil
+}
+
+func (s *RagServer) runSearchStage(ctx context.Context, stage *contextStages) error {
+	start := time.Now()
+	var (
+		results []adapters.ChunkSearchResult
+		err     error
+	)
+
+	if s.SearchOptimizer != nil {
+		logger.Get().Debug("使用优化搜索策略")
+		results, err = s.SearchOptimizer.OptimizedSearch(ctx, stage.query, stage.queryVector)
+		if err != nil {
+			logger.Get().Error("优化搜索失败，回退到标准搜索",
+				slog.Any("error", err),
+				slog.Duration("failed_duration", time.Since(start)),
+			)
+			results, err = s.searchSimilarChunks(ctx, stage.queryVector, 15)
+			if err != nil {
+				logger.Get().Error("向量相似性搜索失败",
+					slog.Any("error", err),
+					slog.Duration("total_search_duration", time.Since(start)),
+				)
+				return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
+			}
+		}
+	} else {
+		logger.Get().Debug("使用标准向量搜索")
+		results, err = s.searchSimilarChunks(ctx, stage.queryVector, 15)
+		if err != nil {
+			logger.Get().Error("向量相似性搜索失败",
+				slog.Any("error", err),
+				slog.Duration("search_duration", time.Since(start)),
+			)
+			return connect.NewError(connect.CodeInternal, fmt.Errorf("failed to search similar chunks: %w", err))
+		}
+	}
+
+	searchDuration := time.Since(start)
+	logger.Get().Info("搜索完成",
+		slog.Int("chunks_found", len(results)),
+		slog.Duration("search_duration", searchDuration),
+	)
+
+	if logger.Get().Enabled(ctx, slog.LevelDebug) {
+		for i, chunk := range results {
+			if i < 5 { // Only log top 5 for brevity
+				logger.Get().Debug("搜索结果详情",
+					slog.Int("rank", i+1),
+					slog.String("chunk_id", chunk.ChunkID),
+					slog.Float64("similarity", float64(chunk.Similarity)),
+					slog.Int("content_length", len(chunk.Content)),
+				)
+			}
+		}
+	}
+
+	stage.similarChunks = results
+	return nil
 }
 
 // searchSimilarChunks performs semantic vector search using pgvector.
@@ -239,8 +268,8 @@ func (s *RagServer) searchSimilarChunks(ctx context.Context, queryVector []float
 	}
 
 	logger.Get().Debug("Vector search completed",
-		zap.Int("results_count", len(results)),
-		zap.Int("query_vector_dim", len(queryVector)),
+		slog.Int("results_count", len(results)),
+		slog.Int("query_vector_dim", len(queryVector)),
 	)
 
 	return results, nil
@@ -274,8 +303,8 @@ func (s *RagServer) rerankChunks(chunks []adapters.ChunkSearchResult, query stri
 	}
 
 	logger.Get().Debug("Chunks reranked and filtered",
-		zap.Int("original_count", len(chunks)),
-		zap.Int("filtered_count", len(filteredChunks)),
+		slog.Int("original_count", len(chunks)),
+		slog.Int("filtered_count", len(filteredChunks)),
 	)
 
 	return filteredChunks
@@ -401,7 +430,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 
 				resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 				if err != nil {
-					logger.Get().Error("LLM关键词提取失败", zap.Error(err))
+					logger.Get().Error("LLM关键词提取失败", slog.Any("error", err))
 					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
@@ -409,7 +438,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
-				logger.Get().Info("关键词 LLM", zap.Any("resp", resp))
+				logger.Get().Info("关键词 LLM", slog.Any("resp", resp))
 				content := resp.Choices[0].Message.Content
 				keywords := s.parseKeywordsXML(content)
 
@@ -459,7 +488,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 				resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 
 				if err != nil {
-					logger.Get().Error("LLM关键词提取失败", zap.Error(err))
+					logger.Get().Error("LLM关键词提取失败", slog.Any("error", err))
 					// 降级为简单分词
 					return pkgutils.ExtractBasicKeywords(query), nil
 				}
@@ -468,7 +497,7 @@ func (s *RagServer) generateKeywords(_ context.Context, query string) ([]string,
 					return pkgutils.ExtractBasicKeywords(query), nil
 				}
 
-				logger.Get().Info("关键词 LLM", zap.Any("resp", resp))
+				logger.Get().Info("关键词 LLM", slog.Any("resp", resp))
 				// 解析LLM返回的XML格式关键词
 				content := resp.Choices[0].Message.Content
 				keywords := s.parseKeywordsXML(content)
@@ -665,7 +694,7 @@ func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapter
 	// 调用LLM进行智能总结
 	resp, err := s.LLM.CreateChatCompletionWithDefaults(s.Config.Services.LLM.Model, messages)
 	if err != nil {
-		logger.Get().Error("LLM智能总结失败，回退到基础模板", zap.Error(err))
+		logger.Get().Error("LLM智能总结失败，回退到基础模板", slog.Any("error", err))
 		// 降级到基础模板方案
 		return s.generateBasicContextSummary(chunks, query), nil
 	}
@@ -684,9 +713,9 @@ func (s *RagServer) generateContextSummary(ctx context.Context, chunks []adapter
 	finalSummary.WriteString("提示: 以上回答基于知识库检索结果生成，如需了解更详细信息，可以尝试调整查询关键词或提出更具体的问题。")
 
 	logger.Get().Info("LLM智能总结生成成功",
-		zap.String("query", query),
-		zap.Int("chunks_count", len(chunks)),
-		zap.Int("summary_length", len(intelligentSummary)),
+		slog.String("query", query),
+		slog.Int("chunks_count", len(chunks)),
+		slog.Int("summary_length", len(intelligentSummary)),
 	)
 
 	return finalSummary.String(), nil

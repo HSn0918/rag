@@ -6,7 +6,7 @@ import (
 
 	"github.com/hsn0918/rag/internal/adapters"
 	"github.com/hsn0918/rag/pkg/logger"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 func CalculateAdvancedScore(chunk adapters.ChunkSearchResult, query string, keywords []string) float64 {
@@ -58,7 +58,11 @@ func RerankChunksWithKeywords(chunks []adapters.ChunkSearchResult, query string,
 			filtered = append(filtered, c)
 		}
 	}
-	logger.Get().Debug("Advanced reranking completed", zap.Int("original_count", len(chunks)), zap.Int("filtered_count", len(filtered)), zap.Strings("keywords", keywords))
+	logger.Get().Debug("Advanced reranking completed",
+		slog.Int("original_count", len(chunks)),
+		slog.Int("filtered_count", len(filtered)),
+		slog.Any("keywords", keywords),
+	)
 	return filtered
 }
 

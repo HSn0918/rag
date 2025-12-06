@@ -203,7 +203,7 @@ go run cmd/server/main.go
 - **存储**: `github.com/minio/minio-go/v7` 用于对象存储
 - **HTTP 客户端**: `github.com/go-resty/resty/v2` 用于外部 API
 - **依赖注入**: `go.uber.org/fx` 用于应用结构
-- **日志**: `go.uber.org/zap` 用于结构化日志
+- **日志**: 标准库 `log/slog` 用于结构化日志
 
 ## 使用示例
 

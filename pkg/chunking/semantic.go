@@ -10,7 +10,7 @@ import (
 
 	"github.com/hsn0918/rag/pkg/clients/embedding"
 	"github.com/hsn0918/rag/pkg/logger"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // Common errors.
@@ -147,7 +147,7 @@ func (sc *SemanticChunker) ChunkText(ctx context.Context, text string) ([]Chunk,
 	if err != nil {
 		// Log warning but don't fail - fallback to base chunks.
 		logger.Get().Warn("Failed to generate embeddings, using base chunks",
-			zap.Error(err),
+			slog.Any("error", err),
 		)
 		return chunks, nil
 	}

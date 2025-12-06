@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/hsn0918/rag/pkg/logger"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 type EmbeddingGenerator interface {
@@ -30,20 +30,20 @@ func (pes *PromptEmbeddingService) InitializeEmbeddings(ctx context.Context) err
 	for _, t := range promptTypes {
 		prompt, err := pes.promptManager.GetPrompt(t)
 		if err != nil {
-			logger.Get().Error("Failed to get prompt", zap.String("type", string(t)), zap.Error(err))
+			logger.Get().Error("Failed to get prompt", slog.String("type", string(t)), slog.Any("error", err))
 			continue
 		}
 		emb, err := pes.generateAndCacheEmbedding(ctx, prompt.System, string(t))
 		if err != nil {
-			logger.Get().Error("Failed to generate embedding", zap.String("type", string(t)), zap.Error(err))
+			logger.Get().Error("Failed to generate embedding", slog.String("type", string(t)), slog.Any("error", err))
 			continue
 		}
 		if err := pes.promptManager.SetPromptEmbedding(t, emb); err != nil {
-			logger.Get().Error("Failed to set prompt embedding", zap.String("type", string(t)), zap.Error(err))
+			logger.Get().Error("Failed to set prompt embedding", slog.String("type", string(t)), slog.Any("error", err))
 		}
-		logger.Get().Debug("Generated embedding for prompt", zap.String("type", string(t)), zap.Int("embedding_dim", len(emb)))
+		logger.Get().Debug("Generated embedding for prompt", slog.String("type", string(t)), slog.Int("embedding_dim", len(emb)))
 	}
-	logger.Get().Info("Prompt embeddings initialized", zap.Int("total_prompts", len(promptTypes)))
+	logger.Get().Info("Prompt embeddings initialized", slog.Int("total_prompts", len(promptTypes)))
 	return nil
 }
 

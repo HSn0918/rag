@@ -5,12 +5,12 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
-	"go.uber.org/zap"
 
 	ragv1 "github.com/hsn0918/rag/internal/gen/rag/v1"
 	"github.com/hsn0918/rag/pkg/chunking"
@@ -27,22 +27,22 @@ func (s *RagServer) UploadPdf(
 	filename := req.Msg.GetFilename()
 	exists, err := s.Storage.CheckFileExists(ctx, fileKey)
 	if err != nil {
-		logger.Get().Error("failed to check file existence", zap.Error(err))
+		logger.Get().Error("failed to check file existence", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check file existence: %w", err))
 	}
 	if !exists {
-		logger.Get().Error("file not found in storage", zap.String("file_key", fileKey))
+		logger.Get().Error("file not found in storage", "file_key", fileKey)
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("file not found in storage: %s", fileKey))
 	}
 	object, err := s.Storage.DownloadFile(ctx, fileKey)
 	if err != nil {
-		logger.Get().Error("failed to download file", zap.Error(err))
+		logger.Get().Error("failed to download file", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to download file: %w", err))
 	}
 	defer object.Close()
 	pdfData, err := io.ReadAll(object)
 	if err != nil {
-		logger.Get().Error("failed to read PDF data", zap.Error(err))
+		logger.Get().Error("failed to read PDF data", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to read PDF data: %w", err))
 	}
 	if len(pdfData) == 0 {
@@ -52,7 +52,7 @@ func (s *RagServer) UploadPdf(
 
 	textContent, pageCount, err := s.processPDFWithCaching(ctx, pdfData)
 	if err != nil {
-		logger.Get().Error("failed to process PDF with caching", zap.Error(err))
+		logger.Get().Error("failed to process PDF with caching", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to process PDF with caching: %w", err))
 	}
 	if textContent == "" {
@@ -66,7 +66,7 @@ func (s *RagServer) UploadPdf(
 
 	chunks, err := s.chunkTextContent(textContent)
 	if err != nil {
-		logger.Get().Error("failed to chunk text", zap.Error(err))
+		logger.Get().Error("failed to chunk text", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to chunk text: %w", err))
 	}
 
@@ -79,7 +79,7 @@ func (s *RagServer) UploadPdf(
 		"created_at": time.Now(),
 	})
 	if err != nil {
-		logger.Get().Error("failed to store document", zap.Error(err))
+		logger.Get().Error("failed to store document", "error", err)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to store document: %w", err))
 	}
 
@@ -90,7 +90,7 @@ func (s *RagServer) UploadPdf(
 
 		embeddingVec, err := s.generateEmbedding(ctx, cleanContent)
 		if err != nil {
-			logger.Get().Error("Failed to generate embedding for chunk", zap.Int("chunk_id", i), zap.Error(err))
+			logger.Get().Error("Failed to generate embedding for chunk", slog.Int("chunk_id", i), slog.Any("error", err))
 			continue
 		}
 
@@ -105,7 +105,7 @@ func (s *RagServer) UploadPdf(
 		// [REVERTED] Store each chunk directly, without a transaction.
 		err = s.DB.StoreChunk(ctx, docID, i, cleanContent, embeddingVec, metadata)
 		if err != nil {
-			logger.Get().Error("Failed to store chunk", zap.Int("chunk_id", i), zap.Error(err))
+			logger.Get().Error("Failed to store chunk", slog.Int("chunk_id", i), slog.Any("error", err))
 			continue
 		}
 
@@ -121,7 +121,7 @@ func (s *RagServer) UploadPdf(
 		"chunks":    len(chunks),
 	})
 	if err != nil {
-		logger.Get().Warn("Failed to cache document", zap.String("doc_id", docID), zap.Error(err))
+		logger.Get().Warn("Failed to cache document", slog.String("doc_id", docID), slog.Any("error", err))
 	}
 
 	return connect.NewResponse(&ragv1.UploadPdfResponse{
@@ -150,13 +150,13 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 			chunking.WithParallelProcessing(true),
 		)
 		if err != nil {
-			logger.Get().Error("Failed to create semantic chunker, falling back to standard chunking", zap.Error(err))
+			logger.Get().Error("Failed to create semantic chunker, falling back to standard chunking", "error", err)
 			// Fall back to standard chunking
 		} else {
 			ctx := context.Background()
 			chunks, err := semanticChunker.ChunkText(ctx, content)
 			if err != nil {
-				logger.Get().Error("Semantic chunking failed, falling back to standard chunking", zap.Error(err))
+				logger.Get().Error("Semantic chunking failed, falling back to standard chunking", "error", err)
 				// Fall back to standard chunking
 			} else {
 				return chunks, nil
@@ -173,7 +173,7 @@ func (s *RagServer) chunkTextContent(content string) ([]chunking.Chunk, error) {
 			true,
 		)
 		if err != nil {
-			logger.Get().Error("Failed to create markdown chunker", zap.Error(err))
+			logger.Get().Error("Failed to create markdown chunker", "error", err)
 			return nil, err
 		}
 		return chunker.ChunkMarkdown(content)
@@ -250,8 +250,8 @@ func (s *RagServer) detectMarkdownContent(content string) bool {
 		(markdownFeatures.headers >= minHeaderCount)
 
 	logger.Get().Debug("Markdown detection analysis",
-		zap.Int("total_lines", totalLines), zap.Int("total_features", totalFeatures),
-		zap.Int("score", score), zap.Bool("is_markdown", isMarkdown))
+		slog.Int("total_lines", totalLines), slog.Int("total_features", totalFeatures),
+		slog.Int("score", score), slog.Bool("is_markdown", isMarkdown))
 
 	return isMarkdown
 }

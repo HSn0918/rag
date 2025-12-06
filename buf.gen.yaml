@@ -12,3 +12,8 @@ plugins:
     out: internal/gen
     opt:
       - paths=source_relative
+  # Frontend TypeScript client for ConnectRPC
+  - plugin: buf.build/connectrpc/es:v1.4.0
+    out: web/gen
+    opt:
+      - target=ts

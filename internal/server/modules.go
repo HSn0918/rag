@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"connectrpc.com/connect"
@@ -19,7 +20,6 @@ import (
 	"github.com/hsn0918/rag/pkg/redis"
 	"github.com/hsn0918/rag/pkg/storage"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -86,7 +86,7 @@ func NewAppConfig() (*config.Config, error) {
 }
 
 // NewAppLogger 创建应用日志器
-func NewAppLogger() (*zap.Logger, error) {
+func NewAppLogger() (*slog.Logger, error) {
 	if err := logger.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -106,8 +106,8 @@ func NewVectorDatabase(cfg *config.Config) (adapters.VectorDB, error) {
 	embeddingModel := cfg.Services.Embedding.Model
 	dimensions := pkgembedding.GetDefaultDimensions(embeddingModel)
 	logger.Get().Info("初始化向量数据库",
-		zap.String("model", embeddingModel),
-		zap.Int("dimensions", dimensions))
+		"model", embeddingModel,
+		"dimensions", dimensions)
 
 	db, err := adapters.NewPostgresVectorDB(dsn, dimensions)
 	if err != nil {
@@ -228,7 +228,7 @@ func NewHTTPHandler(ragService *RagServer, cfg *config.Config) *http.Server {
 	mux.Handle(path, handler)
 
 	serverAddr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
-	logger.Get().Info("HTTP服务器配置完成", zap.String("address", serverAddr))
+	logger.Get().Info("HTTP服务器配置完成", "address", serverAddr)
 
 	return &http.Server{
 		Addr:    serverAddr,
@@ -244,12 +244,12 @@ func NewHTTPHandler(ragService *RagServer, cfg *config.Config) *http.Server {
 func StartHTTPServer(httpServer *http.Server, lifecycle fx.Lifecycle, shutdowner fx.Shutdowner) {
 	lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			logger.Get().Info("启动HTTP服务器", zap.String("addr", httpServer.Addr))
+			logger.Get().Info("启动HTTP服务器", "addr", httpServer.Addr)
 			go func() {
 				if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logger.Get().Error("HTTP服务器启动失败", zap.Error(err))
+					logger.Get().Error("HTTP服务器启动失败", "error", err)
 					if shutdownErr := shutdowner.Shutdown(); shutdownErr != nil {
-						logger.Get().Error("应用程序关闭失败", zap.Error(shutdownErr))
+						logger.Get().Error("应用程序关闭失败", "error", shutdownErr)
 					}
 				}
 			}()

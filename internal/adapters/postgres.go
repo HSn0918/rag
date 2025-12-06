@@ -10,7 +10,7 @@ import (
 	"github.com/hsn0918/rag/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 const (
@@ -115,8 +115,8 @@ func NewPostgresVectorDB(dsn string, dimensions int) (*PostgresVectorDB, error) 
 	}
 
 	logger.Get().Info("成功创建 PostgreSQL 连接池",
-		zap.Int32("max_conns", config.MaxConns),
-		zap.Int32("min_conns", config.MinConns),
+		slog.Int("max_conns", int(config.MaxConns)),
+		slog.Int("min_conns", int(config.MinConns)),
 	)
 
 	// 4. 启用 pgvector 扩展
@@ -253,7 +253,7 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 			&metadataJSON,
 		)
 		if err != nil {
-			logger.Get().Error("扫描搜索结果失败", zap.Error(err))
+			logger.Get().Error("扫描搜索结果失败", "error", err)
 			continue
 		}
 
@@ -261,7 +261,7 @@ func (db *PostgresVectorDB) SearchSimilarChunks(ctx context.Context, queryVector
 		if len(metadataJSON) > 0 {
 			err = json.Unmarshal(metadataJSON, &result.Metadata)
 			if err != nil {
-				logger.Get().Error("解析metadata失败", zap.Error(err))
+				logger.Get().Error("解析metadata失败", "error", err)
 				result.Metadata = make(map[string]interface{})
 			}
 		} else {

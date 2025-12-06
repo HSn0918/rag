@@ -11,7 +11,6 @@ import (
 
 	"github.com/hsn0918/rag/internal/adapters"
 	"github.com/hsn0918/rag/pkg/logger"
-	"go.uber.org/zap"
 )
 
 // Common errors for search optimization.
@@ -160,8 +159,8 @@ func (so *SearchOptimizer) OptimizedSearch(ctx context.Context, query string, qu
 		return nil, fmt.Errorf("%w: query and vector are required", ErrInvalidOptConfig)
 	}
 	logger.Get().Info("Starting optimized search",
-		zap.String("query", query),
-		zap.Int("vector_dim", len(queryVector)),
+		"query", query,
+		"vector_dim", len(queryVector),
 	)
 
 	// Extract search components.
@@ -202,9 +201,9 @@ func (so *SearchOptimizer) OptimizedSearch(ctx context.Context, query string, qu
 	finalResults := so.rerankAndFilter(scored)
 
 	logger.Get().Info("Optimized search completed",
-		zap.Int("vector_results", len(vectorResults)),
-		zap.Int("keyword_results", len(keywordResults)),
-		zap.Int("final_results", len(finalResults)),
+		"vector_results", len(vectorResults),
+		"keyword_results", len(keywordResults),
+		"final_results", len(finalResults),
 	)
 
 	return finalResults, nil

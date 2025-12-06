@@ -6,7 +6,7 @@ default:
 
 gen:
     @echo "正在通过 Docker 运行 buf 生成 Protobuf 和 ConnectRPC 代码..."
-    docker run --rm -v "$(pwd):/workspace" -w /workspace bufbuild/buf generate --path api/proto/rag/v1
+    docker run --rm -v "$(pwd):/workspace" -w /workspace bufbuild/buf generate --path api/rag/v1
     @echo "代码生成完毕。"
 
 clean:
@@ -18,4 +18,3 @@ deps:
     @echo "正在安装 Go 依赖..."
     go mod tidy
     @echo "依赖安装完成。"
-

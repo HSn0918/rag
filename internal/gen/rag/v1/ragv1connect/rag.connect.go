@@ -39,21 +39,52 @@ const (
 	RagServiceUploadPdfProcedure = "/rag.v1.RagService/UploadPdf"
 	// RagServiceGetContextProcedure is the fully-qualified name of the RagService's GetContext RPC.
 	RagServiceGetContextProcedure = "/rag.v1.RagService/GetContext"
+	// RagServiceExtractKeywordsProcedure is the fully-qualified name of the RagService's
+	// ExtractKeywords RPC.
+	RagServiceExtractKeywordsProcedure = "/rag.v1.RagService/ExtractKeywords"
+	// RagServiceGenerateQueryEmbeddingProcedure is the fully-qualified name of the RagService's
+	// GenerateQueryEmbedding RPC.
+	RagServiceGenerateQueryEmbeddingProcedure = "/rag.v1.RagService/GenerateQueryEmbedding"
+	// RagServiceSearchChunksProcedure is the fully-qualified name of the RagService's SearchChunks RPC.
+	RagServiceSearchChunksProcedure = "/rag.v1.RagService/SearchChunks"
+	// RagServiceRerankChunksProcedure is the fully-qualified name of the RagService's RerankChunks RPC.
+	RagServiceRerankChunksProcedure = "/rag.v1.RagService/RerankChunks"
+	// RagServiceSummarizeContextProcedure is the fully-qualified name of the RagService's
+	// SummarizeContext RPC.
+	RagServiceSummarizeContextProcedure = "/rag.v1.RagService/SummarizeContext"
 )
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
-	ragServiceServiceDescriptor          = v1.File_rag_v1_rag_proto.Services().ByName("RagService")
-	ragServicePreUploadMethodDescriptor  = ragServiceServiceDescriptor.Methods().ByName("PreUpload")
-	ragServiceUploadPdfMethodDescriptor  = ragServiceServiceDescriptor.Methods().ByName("UploadPdf")
-	ragServiceGetContextMethodDescriptor = ragServiceServiceDescriptor.Methods().ByName("GetContext")
+	ragServiceServiceDescriptor                      = v1.File_rag_v1_rag_proto.Services().ByName("RagService")
+	ragServicePreUploadMethodDescriptor              = ragServiceServiceDescriptor.Methods().ByName("PreUpload")
+	ragServiceUploadPdfMethodDescriptor              = ragServiceServiceDescriptor.Methods().ByName("UploadPdf")
+	ragServiceGetContextMethodDescriptor             = ragServiceServiceDescriptor.Methods().ByName("GetContext")
+	ragServiceExtractKeywordsMethodDescriptor        = ragServiceServiceDescriptor.Methods().ByName("ExtractKeywords")
+	ragServiceGenerateQueryEmbeddingMethodDescriptor = ragServiceServiceDescriptor.Methods().ByName("GenerateQueryEmbedding")
+	ragServiceSearchChunksMethodDescriptor           = ragServiceServiceDescriptor.Methods().ByName("SearchChunks")
+	ragServiceRerankChunksMethodDescriptor           = ragServiceServiceDescriptor.Methods().ByName("RerankChunks")
+	ragServiceSummarizeContextMethodDescriptor       = ragServiceServiceDescriptor.Methods().ByName("SummarizeContext")
 )
 
 // RagServiceClient is a client for the rag.v1.RagService service.
 type RagServiceClient interface {
+	// 预上传接口，生成文件上传的预签名URL
 	PreUpload(context.Context, *connect.Request[v1.PreUploadRequest]) (*connect.Response[v1.PreUploadResponse], error)
+	// 上传PDF文件并进行处理
 	UploadPdf(context.Context, *connect.Request[v1.UploadPdfRequest]) (*connect.Response[v1.UploadPdfResponse], error)
+	// 根据查询获取相关上下文
 	GetContext(context.Context, *connect.Request[v1.GetContextRequest]) (*connect.Response[v1.GetContextResponse], error)
+	// 关键词提取
+	ExtractKeywords(context.Context, *connect.Request[v1.ExtractKeywordsRequest]) (*connect.Response[v1.ExtractKeywordsResponse], error)
+	// 向量生成
+	GenerateQueryEmbedding(context.Context, *connect.Request[v1.GenerateQueryEmbeddingRequest]) (*connect.Response[v1.GenerateQueryEmbeddingResponse], error)
+	// 向量搜索
+	SearchChunks(context.Context, *connect.Request[v1.SearchChunksRequest]) (*connect.Response[v1.SearchChunksResponse], error)
+	// 重排序
+	RerankChunks(context.Context, *connect.Request[v1.RerankChunksRequest]) (*connect.Response[v1.RerankChunksResponse], error)
+	// 总结
+	SummarizeContext(context.Context, *connect.Request[v1.SummarizeContextRequest]) (*connect.Response[v1.SummarizeContextResponse], error)
 }
 
 // NewRagServiceClient constructs a client for the rag.v1.RagService service. By default, it uses
@@ -84,14 +115,49 @@ func NewRagServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(ragServiceGetContextMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		extractKeywords: connect.NewClient[v1.ExtractKeywordsRequest, v1.ExtractKeywordsResponse](
+			httpClient,
+			baseURL+RagServiceExtractKeywordsProcedure,
+			connect.WithSchema(ragServiceExtractKeywordsMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		generateQueryEmbedding: connect.NewClient[v1.GenerateQueryEmbeddingRequest, v1.GenerateQueryEmbeddingResponse](
+			httpClient,
+			baseURL+RagServiceGenerateQueryEmbeddingProcedure,
+			connect.WithSchema(ragServiceGenerateQueryEmbeddingMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		searchChunks: connect.NewClient[v1.SearchChunksRequest, v1.SearchChunksResponse](
+			httpClient,
+			baseURL+RagServiceSearchChunksProcedure,
+			connect.WithSchema(ragServiceSearchChunksMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		rerankChunks: connect.NewClient[v1.RerankChunksRequest, v1.RerankChunksResponse](
+			httpClient,
+			baseURL+RagServiceRerankChunksProcedure,
+			connect.WithSchema(ragServiceRerankChunksMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		summarizeContext: connect.NewClient[v1.SummarizeContextRequest, v1.SummarizeContextResponse](
+			httpClient,
+			baseURL+RagServiceSummarizeContextProcedure,
+			connect.WithSchema(ragServiceSummarizeContextMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // ragServiceClient implements RagServiceClient.
 type ragServiceClient struct {
-	preUpload  *connect.Client[v1.PreUploadRequest, v1.PreUploadResponse]
-	uploadPdf  *connect.Client[v1.UploadPdfRequest, v1.UploadPdfResponse]
-	getContext *connect.Client[v1.GetContextRequest, v1.GetContextResponse]
+	preUpload              *connect.Client[v1.PreUploadRequest, v1.PreUploadResponse]
+	uploadPdf              *connect.Client[v1.UploadPdfRequest, v1.UploadPdfResponse]
+	getContext             *connect.Client[v1.GetContextRequest, v1.GetContextResponse]
+	extractKeywords        *connect.Client[v1.ExtractKeywordsRequest, v1.ExtractKeywordsResponse]
+	generateQueryEmbedding *connect.Client[v1.GenerateQueryEmbeddingRequest, v1.GenerateQueryEmbeddingResponse]
+	searchChunks           *connect.Client[v1.SearchChunksRequest, v1.SearchChunksResponse]
+	rerankChunks           *connect.Client[v1.RerankChunksRequest, v1.RerankChunksResponse]
+	summarizeContext       *connect.Client[v1.SummarizeContextRequest, v1.SummarizeContextResponse]
 }
 
 // PreUpload calls rag.v1.RagService.PreUpload.
@@ -109,11 +175,49 @@ func (c *ragServiceClient) GetContext(ctx context.Context, req *connect.Request[
 	return c.getContext.CallUnary(ctx, req)
 }
 
+// ExtractKeywords calls rag.v1.RagService.ExtractKeywords.
+func (c *ragServiceClient) ExtractKeywords(ctx context.Context, req *connect.Request[v1.ExtractKeywordsRequest]) (*connect.Response[v1.ExtractKeywordsResponse], error) {
+	return c.extractKeywords.CallUnary(ctx, req)
+}
+
+// GenerateQueryEmbedding calls rag.v1.RagService.GenerateQueryEmbedding.
+func (c *ragServiceClient) GenerateQueryEmbedding(ctx context.Context, req *connect.Request[v1.GenerateQueryEmbeddingRequest]) (*connect.Response[v1.GenerateQueryEmbeddingResponse], error) {
+	return c.generateQueryEmbedding.CallUnary(ctx, req)
+}
+
+// SearchChunks calls rag.v1.RagService.SearchChunks.
+func (c *ragServiceClient) SearchChunks(ctx context.Context, req *connect.Request[v1.SearchChunksRequest]) (*connect.Response[v1.SearchChunksResponse], error) {
+	return c.searchChunks.CallUnary(ctx, req)
+}
+
+// RerankChunks calls rag.v1.RagService.RerankChunks.
+func (c *ragServiceClient) RerankChunks(ctx context.Context, req *connect.Request[v1.RerankChunksRequest]) (*connect.Response[v1.RerankChunksResponse], error) {
+	return c.rerankChunks.CallUnary(ctx, req)
+}
+
+// SummarizeContext calls rag.v1.RagService.SummarizeContext.
+func (c *ragServiceClient) SummarizeContext(ctx context.Context, req *connect.Request[v1.SummarizeContextRequest]) (*connect.Response[v1.SummarizeContextResponse], error) {
+	return c.summarizeContext.CallUnary(ctx, req)
+}
+
 // RagServiceHandler is an implementation of the rag.v1.RagService service.
 type RagServiceHandler interface {
+	// 预上传接口，生成文件上传的预签名URL
 	PreUpload(context.Context, *connect.Request[v1.PreUploadRequest]) (*connect.Response[v1.PreUploadResponse], error)
+	// 上传PDF文件并进行处理
 	UploadPdf(context.Context, *connect.Request[v1.UploadPdfRequest]) (*connect.Response[v1.UploadPdfResponse], error)
+	// 根据查询获取相关上下文
 	GetContext(context.Context, *connect.Request[v1.GetContextRequest]) (*connect.Response[v1.GetContextResponse], error)
+	// 关键词提取
+	ExtractKeywords(context.Context, *connect.Request[v1.ExtractKeywordsRequest]) (*connect.Response[v1.ExtractKeywordsResponse], error)
+	// 向量生成
+	GenerateQueryEmbedding(context.Context, *connect.Request[v1.GenerateQueryEmbeddingRequest]) (*connect.Response[v1.GenerateQueryEmbeddingResponse], error)
+	// 向量搜索
+	SearchChunks(context.Context, *connect.Request[v1.SearchChunksRequest]) (*connect.Response[v1.SearchChunksResponse], error)
+	// 重排序
+	RerankChunks(context.Context, *connect.Request[v1.RerankChunksRequest]) (*connect.Response[v1.RerankChunksResponse], error)
+	// 总结
+	SummarizeContext(context.Context, *connect.Request[v1.SummarizeContextRequest]) (*connect.Response[v1.SummarizeContextResponse], error)
 }
 
 // NewRagServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -140,6 +244,36 @@ func NewRagServiceHandler(svc RagServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(ragServiceGetContextMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	ragServiceExtractKeywordsHandler := connect.NewUnaryHandler(
+		RagServiceExtractKeywordsProcedure,
+		svc.ExtractKeywords,
+		connect.WithSchema(ragServiceExtractKeywordsMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	ragServiceGenerateQueryEmbeddingHandler := connect.NewUnaryHandler(
+		RagServiceGenerateQueryEmbeddingProcedure,
+		svc.GenerateQueryEmbedding,
+		connect.WithSchema(ragServiceGenerateQueryEmbeddingMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	ragServiceSearchChunksHandler := connect.NewUnaryHandler(
+		RagServiceSearchChunksProcedure,
+		svc.SearchChunks,
+		connect.WithSchema(ragServiceSearchChunksMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	ragServiceRerankChunksHandler := connect.NewUnaryHandler(
+		RagServiceRerankChunksProcedure,
+		svc.RerankChunks,
+		connect.WithSchema(ragServiceRerankChunksMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	ragServiceSummarizeContextHandler := connect.NewUnaryHandler(
+		RagServiceSummarizeContextProcedure,
+		svc.SummarizeContext,
+		connect.WithSchema(ragServiceSummarizeContextMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/rag.v1.RagService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RagServicePreUploadProcedure:
@@ -148,6 +282,16 @@ func NewRagServiceHandler(svc RagServiceHandler, opts ...connect.HandlerOption) 
 			ragServiceUploadPdfHandler.ServeHTTP(w, r)
 		case RagServiceGetContextProcedure:
 			ragServiceGetContextHandler.ServeHTTP(w, r)
+		case RagServiceExtractKeywordsProcedure:
+			ragServiceExtractKeywordsHandler.ServeHTTP(w, r)
+		case RagServiceGenerateQueryEmbeddingProcedure:
+			ragServiceGenerateQueryEmbeddingHandler.ServeHTTP(w, r)
+		case RagServiceSearchChunksProcedure:
+			ragServiceSearchChunksHandler.ServeHTTP(w, r)
+		case RagServiceRerankChunksProcedure:
+			ragServiceRerankChunksHandler.ServeHTTP(w, r)
+		case RagServiceSummarizeContextProcedure:
+			ragServiceSummarizeContextHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -167,4 +311,24 @@ func (UnimplementedRagServiceHandler) UploadPdf(context.Context, *connect.Reques
 
 func (UnimplementedRagServiceHandler) GetContext(context.Context, *connect.Request[v1.GetContextRequest]) (*connect.Response[v1.GetContextResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.GetContext is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) ExtractKeywords(context.Context, *connect.Request[v1.ExtractKeywordsRequest]) (*connect.Response[v1.ExtractKeywordsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.ExtractKeywords is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) GenerateQueryEmbedding(context.Context, *connect.Request[v1.GenerateQueryEmbeddingRequest]) (*connect.Response[v1.GenerateQueryEmbeddingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.GenerateQueryEmbedding is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) SearchChunks(context.Context, *connect.Request[v1.SearchChunksRequest]) (*connect.Response[v1.SearchChunksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.SearchChunks is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) RerankChunks(context.Context, *connect.Request[v1.RerankChunksRequest]) (*connect.Response[v1.RerankChunksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.RerankChunks is not implemented"))
+}
+
+func (UnimplementedRagServiceHandler) SummarizeContext(context.Context, *connect.Request[v1.SummarizeContextRequest]) (*connect.Response[v1.SummarizeContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("rag.v1.RagService.SummarizeContext is not implemented"))
 }

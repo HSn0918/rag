@@ -15,7 +15,7 @@ require (
 	github.com/spf13/viper v1.20.1
 	github.com/yuin/goldmark v1.7.13
 	go.uber.org/fx v1.24.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/net v0.41.0
 )
 

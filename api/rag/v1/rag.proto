@@ -15,6 +15,16 @@ service RagService {
   rpc UploadPdf(UploadPdfRequest) returns (UploadPdfResponse);
   // 根据查询获取相关上下文
   rpc GetContext(GetContextRequest) returns (GetContextResponse);
+  // 关键词提取
+  rpc ExtractKeywords(ExtractKeywordsRequest) returns (ExtractKeywordsResponse);
+  // 向量生成
+  rpc GenerateQueryEmbedding(GenerateQueryEmbeddingRequest) returns (GenerateQueryEmbeddingResponse);
+  // 向量搜索
+  rpc SearchChunks(SearchChunksRequest) returns (SearchChunksResponse);
+  // 重排序
+  rpc RerankChunks(RerankChunksRequest) returns (RerankChunksResponse);
+  // 总结
+  rpc SummarizeContext(SummarizeContextRequest) returns (SummarizeContextResponse);
 }
 
 // 预上传请求
@@ -73,3 +83,124 @@ message GetContextResponse {
   string context = 1;
 }
 
+// ExtractKeywordsRequest 关键词提取请求
+message ExtractKeywordsRequest {
+  // 原始查询
+  string query = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2000
+  }];
+}
+
+// ExtractKeywordsResponse 关键词提取响应
+message ExtractKeywordsResponse {
+  // 提取出的关键词
+  repeated string keywords = 1;
+}
+
+// GenerateQueryEmbeddingRequest 向量生成请求
+message GenerateQueryEmbeddingRequest {
+  // 用于生成向量的文本
+  string query_text = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2000
+  }];
+  // 可选模型名
+  string model = 2;
+}
+
+// GenerateQueryEmbeddingResponse 向量生成响应
+message GenerateQueryEmbeddingResponse {
+  // 生成的向量
+  repeated float vector = 1;
+}
+
+// SearchChunksRequest 向量搜索请求
+message SearchChunksRequest {
+  // 查询向量
+  repeated float vector = 1;
+  // 最大返回数量
+  int32 limit = 2;
+  // 相似度阈值
+  float threshold = 3;
+}
+
+// SearchChunk 搜索结果片段视图
+message SearchChunk {
+  // 片段ID
+  string id = 1;
+  // 所属文档ID
+  string document_id = 2;
+  // 相似度
+  float similarity = 3;
+  // 片段内容摘录
+  string snippet = 4;
+  // 片段元数据（JSON）
+  string metadata_json = 5;
+}
+
+// SearchChunksResponse 搜索响应
+message SearchChunksResponse {
+  // 搜索到的片段
+  repeated SearchChunk chunks = 1;
+}
+
+// RerankChunkInput 重排输入片段
+message RerankChunkInput {
+  // 片段ID
+  string id = 1;
+  // 原始相似度
+  float similarity = 2;
+  // 片段内容（用于重排）
+  string content = 3;
+  // 元数据 JSON
+  string metadata_json = 4;
+}
+
+// RerankChunksRequest 重排请求
+message RerankChunksRequest {
+  // 待重排的片段
+  repeated RerankChunkInput chunks = 1;
+  // 查询文本
+  string query = 2;
+  // 关键词列表
+  repeated string keywords = 3;
+  // 返回的最大片段数量
+  int32 max_chunks = 4;
+  // 最小相似度阈值
+  float min_similarity = 5;
+}
+
+// RerankChunk 重排后的片段视图
+message RerankChunk {
+  // 片段ID
+  string id = 1;
+  // 相似度
+  float similarity = 2;
+  // 重排得分
+  double score = 3;
+  // 摘录
+  string snippet = 4;
+  // 元数据 JSON
+  string metadata_json = 5;
+}
+
+// RerankChunksResponse 重排响应
+message RerankChunksResponse {
+  // 重排后的片段
+  repeated RerankChunk chunks = 1;
+}
+
+// SummarizeContextRequest 总结请求
+message SummarizeContextRequest {
+  // 查询文本
+  string query = 1;
+  // 参与总结的片段
+  repeated RerankChunkInput chunks = 2;
+}
+
+// SummarizeContextResponse 总结响应
+message SummarizeContextResponse {
+  // 生成的总结
+  string summary = 1;
+}
