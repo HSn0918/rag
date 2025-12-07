@@ -1,5 +1,5 @@
 import * as React from "react"
-import { MessageSquare, X, Send, Minimize2, Maximize2, Loader2, User, Bot, Database } from "lucide-react"
+import { MessageSquare, X, Send, Minimize2, Maximize2, Loader2, User, Bot, Database, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
@@ -26,6 +26,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 export function AIChat({ client }: AIChatProps) {
     const [isOpen, setIsOpen] = React.useState(false)
@@ -118,7 +120,7 @@ export function AIChat({ client }: AIChatProps) {
                 }
             }
 
-            // 2. AI Generation Step
+            // 2. AI Generation Step (Streaming)
             setLoadingStage("AI 正在思考...")
             let endpoint = `${providerConfig.baseUrl}/chat/completions`
 
@@ -135,7 +137,7 @@ export function AIChat({ client }: AIChatProps) {
                         // Ensure strict type compatibility for API
                         return { role: m.role as "user" | "assistant" | "system", content: m.content }
                     }).filter(Boolean),
-                    stream: false
+                    stream: true
                 })
             })
 
@@ -144,10 +146,52 @@ export function AIChat({ client }: AIChatProps) {
                 throw new Error(`API Error: ${response.status} - ${errText}`)
             }
 
-            const data = await response.json()
-            const reply = data.choices?.[0]?.message?.content || "无回复。"
+            if (!response.body) throw new Error("Response body is null")
 
-            setMessages(prev => [...prev, { role: "assistant", content: reply }])
+            // Initialize empty assistant message
+            setMessages(prev => [...prev, { role: "assistant", content: "" }])
+            setLoadingStage("AI 正在回复...")
+
+            const reader = response.body.getReader()
+            const decoder = new TextDecoder()
+            let done = false
+            let accumulatedContent = ""
+
+            while (!done) {
+                const { value, done: doneReading } = await reader.read()
+                done = doneReading
+                const chunkValue = decoder.decode(value, { stream: true })
+
+                // Parse distinct SSE messages (they can come in one chunk or split)
+                const lines = chunkValue.split('\n')
+
+                for (const line of lines) {
+                    if (line.startsWith("data: ")) {
+                        const dataStr = line.slice(6)
+                        if (dataStr === "[DONE]") {
+                            done = true
+                            break
+                        }
+                        try {
+                            const data = JSON.parse(dataStr)
+                            const contentDelta = data.choices?.[0]?.delta?.content || ""
+                            if (contentDelta) {
+                                accumulatedContent += contentDelta
+                                setMessages(prev => {
+                                    const newMsgs = [...prev]
+                                    const lastMsg = newMsgs[newMsgs.length - 1]
+                                    if (lastMsg.role === "assistant") {
+                                        lastMsg.content = accumulatedContent
+                                    }
+                                    return newMsgs
+                                })
+                            }
+                        } catch (e) {
+                            console.warn("Failed to parse SSE data", e)
+                        }
+                    }
+                }
+            }
 
         } catch (error: any) {
             setMessages(prev => [...prev, { role: "system", content: `错误: ${error.message}` }])
@@ -199,6 +243,9 @@ export function AIChat({ client }: AIChatProps) {
                 </div>
 
                 <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-orange-500" onClick={(e) => { e.stopPropagation(); setMessages([]) }} title="清除对话">
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-indigo-600" onClick={(e) => { e.stopPropagation(); setIsMinimized(!isMinimized) }}>
                         {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
                     </Button>
@@ -238,14 +285,51 @@ export function AIChat({ client }: AIChatProps) {
                                     {msg.role === "user" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
                                 </div>
                                 <div className={cn(
-                                    "p-3 rounded-2xl whitespace-pre-wrap",
+                                    "p-3 rounded-2xl overflow-hidden",
                                     msg.role === "user"
                                         ? "bg-indigo-600 text-white rounded-tr-none shadow-md"
                                         : msg.role === "system"
                                             ? "bg-amber-50 text-amber-800 border border-amber-200 text-xs w-full text-center italic py-1"
                                             : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-tl-none shadow-sm"
                                 )}>
-                                    {msg.content}
+                                    {msg.role === "user" || msg.role === "system" ? (
+                                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                                    ) : (
+                                        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+                                            <ReactMarkdown
+                                                remarkPlugins={[remarkGfm]}
+                                                components={{
+                                                    // Override generic elements for better styling
+                                                    p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                                                    ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                                                    ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                                                    li: ({ children }) => <li className="mb-1">{children}</li>,
+                                                    code: ({ node, className, children, ...props }: any) => {
+                                                        const match = /language-(\w+)/.exec(className || '')
+                                                        return match ? (
+                                                            <div className="rounded-md bg-slate-950 p-2 my-2 overflow-x-auto text-xs text-slate-50">
+                                                                <code className={className} {...props}>
+                                                                    {children}
+                                                                </code>
+                                                            </div>
+                                                        ) : (
+                                                            <code className="bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded text-xs font-mono text-pink-600 dark:text-pink-400" {...props}>
+                                                                {children}
+                                                            </code>
+                                                        )
+                                                    },
+                                                    table: ({ children }) => <div className="my-2 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700"><table className="w-full text-sm text-left">{children}</table></div>,
+                                                    thead: ({ children }) => <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase text-slate-700 dark:text-slate-300">{children}</thead>,
+                                                    th: ({ children }) => <th className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 font-medium">{children}</th>,
+                                                    td: ({ children }) => <td className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">{children}</td>,
+                                                    a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{children}</a>,
+                                                    blockquote: ({ children }) => <blockquote className="border-l-4 border-indigo-300 pl-4 py-1 my-2 italic text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-r">{children}</blockquote>
+                                                }}
+                                            >
+                                                {msg.content}
+                                            </ReactMarkdown>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}

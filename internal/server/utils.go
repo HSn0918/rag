@@ -43,9 +43,11 @@ func (s *RagServer) cleanText(text string) string {
 // generateEmbedding 使用嵌入客户端生成文本的向量表示
 func (s *RagServer) generateEmbedding(ctx context.Context, text string) ([]float32, error) {
 	// 检查缓存
-	cachedEmbedding, err := s.Cache.GetEmbedding(ctx, text)
-	if err == nil && len(cachedEmbedding) > 0 {
-		return cachedEmbedding, nil
+	if s.Cache != nil {
+		cachedEmbedding, err := s.Cache.GetEmbedding(ctx, text)
+		if err == nil && len(cachedEmbedding) > 0 {
+			return cachedEmbedding, nil
+		}
 	}
 
 	// 检查服务依赖
@@ -73,7 +75,9 @@ func (s *RagServer) generateEmbedding(ctx context.Context, text string) ([]float
 	}
 
 	// 缓存结果
-	_ = s.Cache.CacheEmbedding(ctx, text, embeddingVec)
+	if s.Cache != nil {
+		_ = s.Cache.CacheEmbedding(ctx, text, embeddingVec)
+	}
 
 	return embeddingVec, nil
 }
